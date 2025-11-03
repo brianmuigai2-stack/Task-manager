@@ -9,6 +9,9 @@
      getAuth,
      createUserWithEmailAndPassword,
      signInWithEmailAndPassword,
+     fetchSignInMethodsForEmail,
+     setPersistence,
+     browserLocalPersistence,
      signOut as fbSignOut,
      onAuthStateChanged
    } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
@@ -33,6 +36,11 @@
    const app = initializeApp(firebaseConfig);
    const auth = getAuth(app);
    const db = getFirestore(app);
+   
+   /* Ensure Auth persistence so sign-in is remembered across browser sessions */
+   setPersistence(auth, browserLocalPersistence).catch(err => {
+     console.warn('setPersistence warning', err);
+   });
    
    /* ===========================
       Helpers: normalize username & synthetic email
@@ -134,7 +142,6 @@
       Tasks: listener and renderer
       =========================== */
    function startTasksListener() {
-     // unsubscribe previous if any
      if (typeof unsubscribeTasksListener === 'function') {
        try { unsubscribeTasksListener(); } catch (e) {}
        unsubscribeTasksListener = null;
@@ -149,7 +156,6 @@
      const tasksMap = new Map();
    
      const unsub1 = onSnapshot(qOwned, (snap) => {
-       // remove old owned entries
        for (const [k, v] of tasksMap) {
          if (v.ownerId === currentUser) tasksMap.delete(k);
        }
@@ -158,7 +164,6 @@
      }, (err) => console.warn('Tasks owned listener error', err));
    
      const unsub2 = onSnapshot(qShared, (snap) => {
-       // remove previous shared entries that matched before
        for (const [k, v] of tasksMap) {
          if (v.ownerId !== currentUser && Array.isArray(v.sharedWith) && v.sharedWith.includes(currentUser)) tasksMap.delete(k);
        }
@@ -258,7 +263,6 @@
    
    async function deleteTaskRemote(id) {
      const tRef = doc(db, 'tasks', id);
-     // soft-delete pattern used here; you can replace with deleteDoc(tRef) if you import it
      await updateDoc(tRef, { deleted: true });
      return { ok: true };
    }
@@ -404,18 +408,46 @@
    
          if (isSigningUp) {
            try {
+             // check if synthetic email already has sign-in methods
+             const methods = await fetchSignInMethodsForEmail(auth, syntheticEmail);
+             if (Array.isArray(methods) && methods.length > 0) {
+               // already exists
+               if (methods.includes('password')) {
+                 // email already registered with password — suggest sign in
+                 const trySignIn = confirm(`Username "${normalized}" is already taken. Do you want to try signing in with that username now?`);
+                 if (trySignIn) {
+                   try {
+                     await signInWithEmailAndPassword(auth, syntheticEmail, password);
+                     return;
+                   } catch (siErr) {
+                     alert('Sign in failed (wrong password). Choose a different username or recover the password in the Firebase console.');
+                     return;
+                   }
+                 } else {
+                   return;
+                 }
+               } else {
+                 alert(`Username "${normalized}" is already taken (different sign-in method). Please choose another username.`);
+                 return;
+               }
+             }
+   
+             // proceed with creating the auth user
              await createUserWithEmailAndPassword(auth, syntheticEmail, password);
+             // create user doc in Firestore
              await createUserFirestore(normalized, usernameRaw);
              currentUser = normalized;
              currentUserDisplayName = usernameRaw;
              showAppUI();
            } catch (err) {
              console.error('signup error', err);
-             alert('Signup failed: ' + (err.message || err.code || 'unknown'));
+             alert('Signup failed: ' + (err.code || err.message || err));
            }
          } else {
+           // sign-in flow
            try {
              await signInWithEmailAndPassword(auth, syntheticEmail, password);
+             // onAuthStateChanged will handle UI
            } catch (err) {
              console.error('signin error', err);
              alert('Sign in failed: Invalid username or password.');
@@ -558,7 +590,10 @@
              alert(`Friend request sent to ${recipientRaw}!`);
              if (inviteFormEl) inviteFormEl.reset();
            }
-         } catch (err) { console.warn('invite error', err); alert('Invite failed'); }
+         } catch (err) { 
+           console.error('invite error', err); 
+           alert('Invite failed: ' + err.message); 
+         }
        });
      }
    
@@ -639,7 +674,6 @@
    
    /* ===========================
       Robust background video + CSS slides
-      Replace any older video code with this block
       =========================== */
    
    const videoSources = [
@@ -647,7 +681,8 @@
      { title: 'Just a video', url: './videos/background-1.mp4', fallbackCss: 'linear-gradient(-45deg,#222,#444)' },
      { title: 'Tech Data Flow', url: './videos/background-2.mp4', fallbackCss: 'linear-gradient(-45deg,#0f172a,#0b3a5b)' },
      { title: 'Abstract Particles', url: './videos/background-3.mp4', fallbackCss: 'linear-gradient(-45deg,#1f1c2c,#928dab)' },
-     { title: 'Calm Clouds', url: 'https://storage.coverr.co/videos/coverr-clouds-sky-5459/1080p.mp4', fallbackCss: 'linear-gradient(-45deg,#8EC5FC,#E0C3FC)' },
+     // --- FIX: Commented out the broken video URL ---
+     // { title: 'Calm Clouds', url: 'https://storage.coverr.co/videos/coverr-clouds-sky-5459/1080p.mp4', fallbackCss: 'linear-gradient(-45deg,#8EC5FC,#E0C3FC)' },
      { title: 'Sunset Gradient', type: 'css', css: 'linear-gradient(-45deg,#f093fb,#f5576c,#4facfe,#00f2fe)' },
      { title: 'Forest Mist', type: 'css', css: 'linear-gradient(-45deg,#8EC5FC,#E0C3FC,#8ED1FC,#C3F0CA)' }
    ];
@@ -741,4 +776,3 @@
    window.showCurrentBg = () => {
      console.log('current index:', currentVideoIndex, 'source:', videoSources[currentVideoIndex]);
    };
-   
