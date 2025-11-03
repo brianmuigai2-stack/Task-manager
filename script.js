@@ -16,8 +16,8 @@
      onAuthStateChanged
    } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
    import {
-     getFirestore, doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove, deleteField,
-     collection, addDoc, query, where, onSnapshot, orderBy
+     getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove, deleteField,
+     collection, addDoc, query, where, onSnapshot, orderBy, deleteDoc
    } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
    
    /* ===========================
@@ -101,7 +101,8 @@
    let currentUser = null; // normalized username
    let currentUserDisplayName = '';
    let unsubscribeTasksListener = null;
-   let localCategories = ['General'];
+   let localCategories = ['General']; // Will be loaded from Firestore
+   let statsPieChart = null; // <-- Global variable for the chart instance
    
    /* ===========================
       Utility: escape HTML
@@ -127,7 +128,8 @@
        displayName: displayName || normalizedUsername,
        createdAt: new Date(),
        friends: [],
-       friendRequests: {}
+       friendRequests: {},
+       categories: ['General'] // Initialize with default category
      });
      return { ok: true };
    }
@@ -136,6 +138,133 @@
      const userRef = doc(db, 'users', normalizedUsername);
      const snap = await getDoc(userRef);
      return snap.exists() ? snap.data() : null;
+   }
+   
+   /* ===========================
+      ADDED: Category Management Functions
+      =========================== */
+   
+   // Renders categories in all relevant dropdowns
+   function renderCategories() {
+     const mainSelect = taskCategorySelect();
+     const editSelect = document.getElementById('edit-task-category');
+   
+     if (mainSelect) {
+       mainSelect.innerHTML = ''; // Clear existing options
+       localCategories.forEach(cat => {
+         const option = document.createElement('option');
+         option.value = cat;
+         option.textContent = cat;
+         mainSelect.appendChild(option);
+       });
+     }
+   
+     if (editSelect) {
+       editSelect.innerHTML = ''; // Clear existing options
+       localCategories.forEach(cat => {
+         const option = document.createElement('option');
+         option.value = cat;
+         option.textContent = cat;
+         editSelect.appendChild(option);
+       });
+     }
+   }
+   
+   // Handles the logic for adding a new category
+   async function handleAddCategory() {
+     const input = categoryInput();
+     if (!input) return;
+     const newCategoryRaw = input.value.trim();
+   
+     if (!newCategoryRaw) {
+       alert('Please enter a category name.');
+       return;
+     }
+   
+     // Capitalize the first letter for display and normalize for storage
+     const displayCategory = newCategoryRaw.charAt(0).toUpperCase() + newCategoryRaw.slice(1);
+   
+     if (localCategories.includes(displayCategory)) {
+       alert('This category already exists.');
+       return;
+     }
+   
+     // Add to local state and UI
+     localCategories.push(displayCategory);
+     renderCategories();
+     
+     // Save to Firestore
+     try {
+       const userRef = doc(db, 'users', currentUser);
+       await updateDoc(userRef, { categories: localCategories });
+       console.log('Category saved to Firestore.');
+     } catch (error) {
+       console.error('Error saving category:', error);
+       alert('Could not save the new category.');
+     }
+   
+     // Clear the input field
+     input.value = '';
+   }
+   
+   /* ===========================
+      UPDATED: Function to create a larger set of varied sample tasks for a new user
+      =========================== */
+   async function createSampleTasksForUser(username) {
+     console.log(`Creating a large set of varied sample tasks for new user: ${username}`);
+     const tasksCollection = collection(db, 'tasks');
+     const now = new Date();
+     const today = now.toISOString().split('T')[0];
+     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+     const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+     const inThreeDays = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+   
+     const sampleTasks = [
+       // Work Tasks (5 tasks)
+       { ownerId: username, ownerName: username, text: "Review project proposal", notes: "Check for typos and budget clarity.", category: "Work", priority: "high", completed: false, createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Prepare slides for Monday's meeting", notes: "Focus on Q3 results.", dueDate: tomorrow, category: "Work", priority: "high", completed: false, createdAt: new Date(now.getTime() - 4 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Reply to client emails", notes: "Urgent inquiries from Johnson & Co.", category: "Work", priority: "medium", completed: true, createdAt: yesterday, completedAt: new Date(now.getTime() - 10 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Update team on project progress", notes: "Send a summary email.", category: "Work", priority: "low", completed: false, createdAt: new Date(now.getTime() - 30 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Code review for feature branch", notes: "Focus on security and performance.", category: "Work", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 6 * 60 * 60 * 1000) },
+   
+       // Personal Tasks (4 tasks)
+       { ownerId: username, ownerName: username, text: "Plan weekend trip to the mountains", notes: "Book a hotel and research hiking trails.", dueDate: nextWeek, category: "Personal", priority: "low", completed: false, createdAt: new Date(now.getTime() - 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Call Mom for her birthday", notes: "Don't forget!", dueDate: tomorrow, category: "Personal", priority: "high", completed: false, createdAt: now },
+       { ownerId: username, ownerName: username, text: "Read 30 pages of a book", notes: "Continue reading 'The Pragmatic Programmer'.", category: "Personal", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Buy a gift for Sarah's party", notes: "Check her wishlist online.", dueDate: inThreeDays, category: "Personal", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 7 * 60 * 60 * 1000) },
+   
+       // Health & Fitness Tasks (3 tasks)
+       { ownerId: username, ownerName: username, text: "Go for a 5km run", notes: "Morning run in the park.", category: "Health & Fitness", priority: "medium", completed: true, createdAt: yesterday, completedAt: new Date(now.getTime() - 14 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Schedule a dentist appointment", notes: "Annual checkup.", dueDate: inThreeDays, category: "Health & Fitness", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Meal prep for the week", notes: "Cook chicken, quinoa, and veggies.", category: "Health & Fitness", priority: "low", completed: false, createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000) },
+   
+       // Finance Tasks (3 tasks)
+       { ownerId: username, ownerName: username, text: "Pay monthly bills", notes: "Electricity, internet, and credit card.", dueDate: tomorrow, category: "Finance", priority: "high", completed: false, createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Review monthly budget", notes: "See where money was spent.", category: "Finance", priority: "low", completed: false, createdAt: new Date(now.getTime() - 12 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Set up automatic savings transfer", notes: "Transfer $100 to savings account each payday.", category: "Finance", priority: "medium", completed: false, createdAt: now },
+   
+       // Home & Errands Tasks (3 tasks)
+       { ownerId: username, ownerName: username, text: "Take out the trash and recycling", notes: "Bins go out Tuesday night.", dueDate: tomorrow, category: "Home & Errands", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 9 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Go to the post office", notes: "Mail the package for eBay sale.", category: "Home & Errands", priority: "low", completed: false, createdAt: new Date(now.getTime() - 11 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Fix the leaky kitchen faucet", notes: "Watch a tutorial first, then buy parts.", category: "Home & Errands", priority: "low", completed: false, createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000) },
+       
+       // Learning & Development Tasks (2 tasks)
+       { ownerId: username, ownerName: username, text: "Complete 'Advanced JavaScript' module", notes: "On the online learning platform.", category: "Learning & Development", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 4 * 60 * 60 * 1000) },
+       { ownerId: username, ownerName: username, text: "Watch a tutorial on React Hooks", notes: "Focus on useEffect and useContext.", category: "Learning & Development", priority: "low", completed: false, createdAt: new Date(now.getTime() - 20 * 60 * 1000) },
+   
+       // Uncategorized Tasks (2 tasks)
+       { ownerId: username, ownerName: username, text: "A task without a category", notes: "This will appear as 'Uncategorized' in the stats.", priority: "low", completed: false, createdAt: now },
+       { ownerId: username, ownerName: username, text: "Research new desk chairs", notes: "My back is killing me.", priority: "low", completed: false, createdAt: new Date(now.getTime() - 15 * 60 * 1000) }
+     ];
+   
+     try {
+       // Use Promise.all to create all tasks concurrently
+       await Promise.all(sampleTasks.map(taskData => addDoc(tasksCollection, taskData)));
+       console.log("A large set of varied sample tasks created successfully.");
+     } catch (error) {
+       console.error("Error creating sample tasks:", error);
+     }
    }
    
    /* ===========================
@@ -150,23 +279,20 @@
      if (!tl) return;
    
      const tasksCollection = collection(db, 'tasks');
+     // --- CRITICAL FIX: Reverted query to work with all existing documents ---
      const qOwned = query(tasksCollection, where('ownerId', '==', currentUser), orderBy('createdAt', 'desc'));
      const qShared = query(tasksCollection, where('sharedWith', 'array-contains', currentUser), orderBy('createdAt', 'desc'));
    
      const tasksMap = new Map();
    
      const unsub1 = onSnapshot(qOwned, (snap) => {
-       for (const [k, v] of tasksMap) {
-         if (v.ownerId === currentUser) tasksMap.delete(k);
-       }
+       console.log(`[Listener] Owned tasks snapshot received. Size: ${snap.size}`);
        snap.forEach(d => tasksMap.set(d.id, { id: d.id, ...d.data() }));
        renderTasksFromMap(tasksMap);
      }, (err) => console.warn('Tasks owned listener error', err));
    
      const unsub2 = onSnapshot(qShared, (snap) => {
-       for (const [k, v] of tasksMap) {
-         if (v.ownerId !== currentUser && Array.isArray(v.sharedWith) && v.sharedWith.includes(currentUser)) tasksMap.delete(k);
-       }
+       console.log(`[Listener] Shared tasks snapshot received. Size: ${snap.size}`);
        snap.forEach(d => tasksMap.set(d.id, { id: d.id, ...d.data() }));
        renderTasksFromMap(tasksMap);
      }, (err) => console.warn('Tasks shared listener error', err));
@@ -177,7 +303,11 @@
      };
    }
    
+   // ENHANCED: Added logging to help debug missing tasks
    function renderTasksFromMap(tasksMap) {
+     console.log("Rendering tasks from map. Map size:", tasksMap.size);
+     console.log("Tasks in map:", Array.from(tasksMap.values()));
+   
      const tl = taskList();
      if (!tl) return;
      tl.innerHTML = '';
@@ -186,6 +316,7 @@
        const tb = b.createdAt ? (b.createdAt.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime()) : 0;
        return tb - ta;
      });
+     console.log("Sorted array to render:", arr);
      arr.forEach(task => {
        const li = createTaskElement(task);
        tl.appendChild(li);
@@ -262,8 +393,9 @@
    }
    
    async function deleteTaskRemote(id) {
+     // --- FIX: Use simple document deletion. No need for a 'deleted' field. ---
      const tRef = doc(db, 'tasks', id);
-     await updateDoc(tRef, { deleted: true });
+     await deleteDoc(tRef);
      return { ok: true };
    }
    
@@ -375,19 +507,109 @@
      }
    }
    
+   // --- CRITICAL FIX: Simplified this function. It now ONLY loads data. ---
    async function loadAndRenderUserData() {
      if (!currentUser) return;
      const udoc = await getUserDoc(currentUser);
      if (udoc) {
        currentUserDisplayName = udoc.displayName || currentUser;
+       
+       // Load custom categories from Firestore
+       if (udoc.categories && Array.isArray(udoc.categories)) {
+         const mergedCategories = ['General', ...udoc.categories.filter(cat => cat !== 'General')];
+         localCategories = [...new Set(mergedCategories)];
+       } else {
+         localCategories = ['General'];
+       }
+       renderCategories();
+   
        renderFriendRequests(udoc.friendRequests || {});
        renderFriendsListUI(udoc.friends || []);
      } else {
-       await createUserFirestore(currentUser, currentUser);
-       renderFriendRequests({});
-       renderFriendsListUI([]);
+       // This should not happen for a user who just signed up correctly.
+       // If it does, it means there's a bigger issue.
+       console.error("CRITICAL: User document not found for logged-in user. Data cannot be loaded.");
+       alert("There was a problem loading your profile. Please try signing out and back in.");
      }
    }
+   
+   /* ===========================
+      UPDATED: Stats functionality with Pie Chart
+      =========================== */
+   async function calculateAndShowStats() {
+     if (!currentUser) {
+       console.warn("Cannot calculate stats: No current user.");
+       return;
+     }
+   
+     console.log("Calculating stats for user:", currentUser);
+     const tasksCollection = collection(db, 'tasks');
+     // --- CRITICAL FIX: Reverted query to work with all existing documents ---
+     const qOwned = query(tasksCollection, where('ownerId', '==', currentUser), orderBy('createdAt', 'desc'));
+     const qShared = query(tasksCollection, where('sharedWith', 'array-contains', currentUser), orderBy('createdAt', 'desc'));
+   
+     const categoryCounts = {};
+     let totalTasks = 0;
+   
+     try {
+       const ownedSnapshot = await getDocs(qOwned);
+       ownedSnapshot.forEach(doc => {
+         const task = doc.data();
+         totalTasks++;
+         const category = task.category || 'Uncategorized';
+         categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+       });
+   
+       const sharedSnapshot = await getDocs(qShared);
+       sharedSnapshot.forEach(doc => {
+         const task = doc.data();
+         totalTasks++;
+         const category = task.category || 'Uncategorized';
+         categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+       });
+   
+       console.log("Category counts for stats:", categoryCounts);
+   
+       const labels = Object.keys(categoryCounts);
+       const data = Object.values(categoryCounts);
+   
+       const backgroundColors = [
+         'rgba(255, 99, 132, 0.7)', 'rgba(54, 162, 235, 0.7)', 'rgba(255, 206, 86, 0.7)', 'rgba(75, 192, 192, 0.7)',
+         'rgba(153, 102, 255, 0.7)', 'rgba(255, 159, 64, 0.7)', 'rgba(199, 199, 199, 0.7)', 'rgba(83, 102, 255, 0.7)',
+         'rgba(255, 99, 255, 0.7)', 'rgba(99, 255, 132, 0.7)',
+       ];
+   
+       const ctx = document.getElementById('stats-pie-chart').getContext('2d');
+       if (statsPieChart) statsPieChart.destroy();
+   
+       statsPieChart = new Chart(ctx, {
+         type: 'pie', data: {
+           labels: labels, datasets: [{
+             label: 'Tasks by Category', data: data,
+             backgroundColor: backgroundColors.slice(0, data.length), borderColor: '#fff', borderWidth: 2
+           }]
+         }, options: {
+           responsive: true, maintainAspectRatio: false, plugins: {
+             legend: { position: 'top', }, tooltip: {
+               callbacks: {
+                 label: function(context) {
+                   let label = context.label || ''; if (label) label += ': ';
+                   if (context.parsed !== null) label += context.parsed + ' tasks';
+                   return label;
+                 }
+               }
+             }
+           }
+         }
+       });
+   
+       if (dashboardModal()) dashboardModal().style.display = 'block';
+     } catch (error) {
+       console.error("Error calculating stats:", error);
+       alert("Could not load statistics.");
+     }
+   }
+   
    
    /* ===========================
       Event wiring (DOMContentLoaded)
@@ -408,37 +630,33 @@
    
          if (isSigningUp) {
            try {
-             // check if synthetic email already has sign-in methods
              const methods = await fetchSignInMethodsForEmail(auth, syntheticEmail);
              if (Array.isArray(methods) && methods.length > 0) {
-               // already exists
                if (methods.includes('password')) {
-                 // email already registered with password — suggest sign in
                  const trySignIn = confirm(`Username "${normalized}" is already taken. Do you want to try signing in with that username now?`);
                  if (trySignIn) {
-                   try {
-                     await signInWithEmailAndPassword(auth, syntheticEmail, password);
-                     return;
-                   } catch (siErr) {
-                     alert('Sign in failed (wrong password). Choose a different username or recover the password in the Firebase console.');
-                     return;
-                   }
-                 } else {
+                   await signInWithEmailAndPassword(auth, syntheticEmail, password);
                    return;
-                 }
+                 } else { return; }
                } else {
                  alert(`Username "${normalized}" is already taken (different sign-in method). Please choose another username.`);
                  return;
                }
              }
    
-             // proceed with creating the auth user
+             // 1. Create the user in Firebase Auth
              await createUserWithEmailAndPassword(auth, syntheticEmail, password);
-             // create user doc in Firestore
+             
+             // 2. Create the user's document in Firestore
              await createUserFirestore(normalized, usernameRaw);
-             currentUser = normalized;
-             currentUserDisplayName = usernameRaw;
-             showAppUI();
+   
+             // 3. Create the sample tasks and wait for them to finish
+             // --- CRITICAL FIX: Moved here to prevent race condition ---
+             await createSampleTasksForUser(normalized);
+   
+             // onAuthStateChanged will now handle showing the UI
+             console.log("Signup successful. Awaiting onAuthStateChanged trigger.");
+   
            } catch (err) {
              console.error('signup error', err);
              alert('Signup failed: ' + (err.code || err.message || err));
@@ -447,7 +665,6 @@
            // sign-in flow
            try {
              await signInWithEmailAndPassword(auth, syntheticEmail, password);
-             // onAuthStateChanged will handle UI
            } catch (err) {
              console.error('signin error', err);
              alert('Sign in failed: Invalid username or password.');
@@ -512,6 +729,12 @@
            if (friendSelectContainer()) friendSelectContainer().style.display = 'none';
          } catch (err) { console.error('add task error', err); alert('Add task failed'); }
        });
+     }
+   
+     // add category button
+     const addCategoryBtnEl = addCategoryBtn();
+     if (addCategoryBtnEl) {
+       addCategoryBtnEl.addEventListener('click', handleAddCategory);
      }
    
      // task list click (toggle, edit, delete)
@@ -590,9 +813,9 @@
              alert(`Friend request sent to ${recipientRaw}!`);
              if (inviteFormEl) inviteFormEl.reset();
            }
-         } catch (err) { 
-           console.error('invite error', err); 
-           alert('Invite failed: ' + err.message); 
+         } catch (err) {
+           console.error('invite error', err);
+           alert('Invite failed: ' + err.message);
          }
        });
      }
@@ -606,15 +829,11 @@
          const fromUser = btn.dataset.user;
          if (!fromUser) return;
          if (btn.classList.contains('accept-btn')) {
-           try {
-             await acceptInviteRemote(fromUser);
-             await loadAndRenderUserData();
-           } catch (err) { console.warn('accept invite error', err); }
+           try { await acceptInviteRemote(fromUser); await loadAndRenderUserData(); }
+           catch (err) { console.warn('accept invite error', err); }
          } else if (btn.classList.contains('decline-btn')) {
-           try {
-             await declineInviteRemote(fromUser);
-             await loadAndRenderUserData();
-           } catch (err) { console.warn('decline invite error', err); }
+           try { await declineInviteRemote(fromUser); await loadAndRenderUserData(); }
+           catch (err) { console.warn('decline invite error', err); }
          }
        });
      }
@@ -652,6 +871,14 @@
        if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); if (searchInput()) searchInput().focus(); }
      });
    
+     // Stats button event listener (UPDATED to be async)
+     const statsBtnEl = statsBtn();
+     if (statsBtnEl) {
+       statsBtnEl.addEventListener('click', async () => {
+         await calculateAndShowStats();
+       });
+     }
+   
    }); // end DOMContentLoaded wiring
    
    /* ===========================
@@ -681,8 +908,6 @@
      { title: 'Just a video', url: './videos/background-1.mp4', fallbackCss: 'linear-gradient(-45deg,#222,#444)' },
      { title: 'Tech Data Flow', url: './videos/background-2.mp4', fallbackCss: 'linear-gradient(-45deg,#0f172a,#0b3a5b)' },
      { title: 'Abstract Particles', url: './videos/background-3.mp4', fallbackCss: 'linear-gradient(-45deg,#1f1c2c,#928dab)' },
-     // --- FIX: Commented out the broken video URL ---
-     // { title: 'Calm Clouds', url: 'https://storage.coverr.co/videos/coverr-clouds-sky-5459/1080p.mp4', fallbackCss: 'linear-gradient(-45deg,#8EC5FC,#E0C3FC)' },
      { title: 'Sunset Gradient', type: 'css', css: 'linear-gradient(-45deg,#f093fb,#f5576c,#4facfe,#00f2fe)' },
      { title: 'Forest Mist', type: 'css', css: 'linear-gradient(-45deg,#8EC5FC,#E0C3FC,#8ED1FC,#C3F0CA)' }
    ];
@@ -697,16 +922,14 @@
    function setVideoSource(index) {
      clearBackgroundTimer();
      if (!Array.isArray(videoSources) || videoSources.length === 0) return;
-     currentVideoIndex = ((index % videoSources.length) + videoSources.length) % videoSources.length;
+     currentVideoIndex = ((index % videoSources.length + videoSources.length) % videoSources.length) % videoSources.length;
      const source = videoSources[currentVideoIndex];
    
-     // reset background and update title
      try { document.body.style.background = ''; } catch (e) {}
      const bgV = bgVideoEl();
      const bgT = bgTitleEl();
      if (bgT) bgT.textContent = source.title || '';
    
-     // CSS-only slide
      if (source.type === 'css' || !source.url) {
        if (bgV) {
          try { bgV.pause(); } catch (e) {}
@@ -719,7 +942,6 @@
        return;
      }
    
-     // Video slide
      if (!bgV) return;
      bgV.style.display = 'block';
      bgV.muted = true;
@@ -746,7 +968,6 @@
      }
    }
    
-   // video element event wiring
    (function wireVideoEvents() {
      const bgV = bgVideoEl();
      if (!bgV) return;
@@ -767,12 +988,10 @@
    if (bgPrevBtnEl) bgPrevBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex - 1); });
    if (bgNextBtnEl) bgNextBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex + 1); });
    
-   // start video after DOM ready (small delay helps)
    document.addEventListener('DOMContentLoaded', () => {
      setTimeout(() => setVideoSource(0), 50);
    });
    
-   // debugging helper
    window.showCurrentBg = () => {
      console.log('current index:', currentVideoIndex, 'source:', videoSources[currentVideoIndex]);
    };
