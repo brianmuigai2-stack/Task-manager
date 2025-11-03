@@ -1,0 +1,12 @@
+{
+    "name": "Ultimate Task Manager",
+    "short_name": "TaskMaster",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#4a90e2",
+    "description": "A feature-rich task management application.",
+    "icons": [
+      { "src": "favicon.ico", "sizes": "any" }
+    ]
+  }
