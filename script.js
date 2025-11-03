@@ -1,844 +1,744 @@
-// script.js
-document.addEventListener('DOMContentLoaded', () => {
-    // ----------------------------
-    // ELEMENTS & AUTH STATE
-    // ----------------------------
-    const authModal = document.getElementById('auth-modal');
-    const authForm = document.getElementById('auth-form');
-    const authTitle = document.getElementById('auth-title');
-    const authSubmitBtn = document.getElementById('auth-submit-btn');
-    const showSignupAnchor = document.getElementById('show-signup'); // anchor in your HTML
-    const appContainer = document.getElementById('app');
-    const signOutBtn = document.getElementById('sign-out-btn');
-    const currentUserDisplay = document.getElementById('current-user-display');
-  
-    let isSigningUp = false;
-    let currentUser = localStorage.getItem('currentUser') || null;
-  
-    // ----------------------------
-    // USER NORMALIZATION + MIGRATION
-    // ----------------------------
-    const normalizeUsername = (raw) => (raw || '').toString().trim().toLowerCase();
-  
-    // Migrate existing users keyed by raw username to normalized keys (non-destructive).
-    const migrateUsersToNormalized = () => {
-      try {
-        const rawUsers = JSON.parse(localStorage.getItem('users') || '{}');
-        const normalized = {};
-        Object.entries(rawUsers).forEach(([key, value]) => {
-          const k = normalizeUsername(key);
-          if (!k) return;
-          if (!normalized[k]) normalized[k] = { ...value, displayName: value.displayName || key };
-        });
-        localStorage.setItem('users', JSON.stringify(normalized));
-        allUsers = normalized;
-      } catch (e) {
-        localStorage.setItem('users', JSON.stringify({}));
-        allUsers = {};
-      }
-    };
-  
-    // ----------------------------
-    // VIDEO BACKGROUND ELEMENTS
-    // ----------------------------
-    const bgVideo = document.getElementById('bg-video');
-    const bgTitle = document.getElementById('bg-title');
-    const bgPrevBtn = document.getElementById('bg-prev-btn');
-    const bgNextBtn = document.getElementById('bg-next-btn');
-  
-    // ----------------------------
-    // TASK UI ELEMENTS (from your HTML)
-    // ----------------------------
-    const taskForm = document.getElementById('task-form');
-    const taskInput = document.getElementById('task-input');
-    const taskNotesInput = document.getElementById('task-notes');
-    const taskDateInput = document.getElementById('task-date');
-    const taskCategorySelect = document.getElementById('task-category');
-    const taskPrioritySelect = document.getElementById('task-priority');
-    const taskRecurrenceSelect = document.getElementById('task-recurrence');
-    const taskList = document.getElementById('task-list');
-    const filterButtons = document.querySelectorAll('.filter-btn');
-    const categoryFilterContainer = document.getElementById('category-filter-buttons');
-    const taskCountEl = document.getElementById('task-count');
-    const categoryInput = document.getElementById('category-input');
-    const addCategoryBtn = document.getElementById('add-category-btn');
-    const categoryListEl = document.getElementById('category-list');
-    const searchInput = document.getElementById('search-input');
-    const statsBtn = document.getElementById('stats-btn');
-    const exportBtn = document.getElementById('export-btn');
-    const taskModal = document.getElementById('task-modal');
-    const editTaskForm = document.getElementById('edit-task-form');
-    const dashboardModal = document.getElementById('dashboard-modal');
-    const closeBtns = document.querySelectorAll('.close-btn');
-    const friendsBtn = document.getElementById('friends-btn');
-    const friendsModal = document.getElementById('friends-modal');
-    const inviteForm = document.getElementById('invite-form');
-    const inviteUsernameInput = document.getElementById('invite-username');
-    const friendRequestsList = document.getElementById('friend-requests-list');
-    const friendsList = document.getElementById('friends-list');
-    const taskModalTitle = document.getElementById('task-modal-title');
-    const isSharedTaskCheckbox = document.getElementById('is-shared-task');
-    const friendSelectContainer = document.getElementById('friend-select-container');
-    const friendCheckboxesContainer = document.getElementById('friend-checkboxes');
-    const weeklyChartEl = document.getElementById('weekly-chart');
-    const categoryChartEl = document.getElementById('category-chart');
-  
-    // ----------------------------
-    // STATE
-    // ----------------------------
-    let tasks = JSON.parse(localStorage.getItem('tasks_' + (currentUser || '')) || '[]');
-    let categories = JSON.parse(localStorage.getItem('categories_' + (currentUser || '')) || '["General"]');
-    let currentFilter = 'all';
-    let currentCategoryFilter = null;
-    let draggedElement = null;
-    let allUsers = JSON.parse(localStorage.getItem('users') || '{}');
-    let friendRequests = JSON.parse(localStorage.getItem('friendRequests_' + (currentUser || '')) || '{}');
-    let friends = JSON.parse(localStorage.getItem('friends_' + (currentUser || '')) || '[]');
-  
-    // ----------------------------
-    // HELPERS FOR LOCAL STORAGE
-    // ----------------------------
-    const saveTasks = () => { if (!currentUser) return; localStorage.setItem('tasks_' + currentUser, JSON.stringify(tasks)); };
-    const saveCategories = () => { if (!currentUser) return; localStorage.setItem('categories_' + currentUser, JSON.stringify(categories)); };
-    const saveFriendRequests = () => { if (!currentUser) return; localStorage.setItem('friendRequests_' + currentUser, JSON.stringify(friendRequests)); };
-    const saveFriends = () => { if (!currentUser) return; localStorage.setItem('friends_' + currentUser, JSON.stringify(friends)); };
-    const saveAllUsers = () => localStorage.setItem('users', JSON.stringify(allUsers || {}));
-  
-    // ----------------------------
-    // UI: show/hide auth/app
-    // ----------------------------
-    const showApp = () => {
-      if (authModal) authModal.style.display = 'none';
-      if (appContainer) appContainer.style.display = 'block';
-      if (currentUserDisplay) currentUserDisplay.textContent = (allUsers[currentUser] && allUsers[currentUser].displayName) || currentUser || '';
-      init(); // initialize app after we show
-    };
-  
-    const showAuthScreen = () => {
-      if (appContainer) appContainer.style.display = 'none';
-      if (authModal) authModal.style.display = 'flex';
-    };
-  
-    // ----------------------------
-    // AUTH: handle signin/signup
-    // ----------------------------
-    const handleAuth = (e) => {
-      if (e && e.preventDefault) e.preventDefault();
-      const usernameEl = document.getElementById('auth-username');
-      const passwordEl = document.getElementById('auth-password');
-      const rawUsername = usernameEl ? usernameEl.value : '';
-      const password = passwordEl ? passwordEl.value : '';
-      const username = normalizeUsername(rawUsername);
-  
-      if (!username || !password) { alert('Please enter both username and password.'); return; }
-  
-      const users = JSON.parse(localStorage.getItem('users') || '{}');
-  
-      if (isSigningUp) {
-        if (users[username]) { alert('Username already exists. Please choose another.'); return; }
-        // Create account
-        users[username] = { password, createdAt: new Date().toISOString(), displayName: rawUsername.trim() || username };
-        localStorage.setItem('users', JSON.stringify(users));
-        allUsers = users;
-        saveAllUsers();
-        currentUser = username;
-        localStorage.setItem('currentUser', username);
-        alert('Account created successfully! Welcome!');
-        showApp();
-      } else {
-        // Sign in
-        if (users[username] && users[username].password === password) {
-          currentUser = username;
-          localStorage.setItem('currentUser', username);
-          // refresh in-memory state for this user
-          allUsers = JSON.parse(localStorage.getItem('users') || '{}');
-          tasks = JSON.parse(localStorage.getItem('tasks_' + currentUser) || '[]');
-          categories = JSON.parse(localStorage.getItem('categories_' + currentUser) || '["General"]');
-          friendRequests = JSON.parse(localStorage.getItem('friendRequests_' + currentUser) || '{}');
-          friends = JSON.parse(localStorage.getItem('friends_' + currentUser) || '[]');
-          showApp();
-        } else {
-          console.log('Login failed — normalized username:', username, 'stored keys:', Object.keys(users));
-          alert('Invalid username or password.');
-        }
-      }
-    };
-  
-    const switchToSignUp = (ev) => {
-      if (ev && ev.preventDefault) ev.preventDefault();
-      isSigningUp = true;
-      if (authTitle) authTitle.textContent = 'Sign Up';
-      if (authSubmitBtn) authSubmitBtn.textContent = 'Sign Up';
-      if (showSignupAnchor) {
-        showSignupAnchor.innerHTML = 'Already have an account? <a href="#" id="show-signin">Sign In</a>';
-        const showSignin = document.getElementById('show-signin');
-        if (showSignin) showSignin.addEventListener('click', switchToSignIn);
-      }
-    };
-  
-    const switchToSignIn = (ev) => {
-      if (ev && ev.preventDefault) ev.preventDefault();
-      isSigningUp = false;
-      if (authTitle) authTitle.textContent = 'Sign In';
-      if (authSubmitBtn) authSubmitBtn.textContent = 'Sign In';
-      if (showSignupAnchor) {
-        showSignupAnchor.innerHTML = `Don't have an account? <a href="#" id="show-signup">Sign Up</a>`;
-        const ss = document.getElementById('show-signup');
-        if (ss) ss.addEventListener('click', switchToSignUp);
-      }
-    };
-  
-    const signOut = () => {
-      localStorage.removeItem('currentUser');
-      currentUser = null;
-      tasks = []; categories = ['General']; friendRequests = {}; friends = [];
-      if (authForm) authForm.reset();
-      showAuthScreen();
-    };
-  
-    // ----------------------------
-    // SAMPLE TASKS (if empty)
-    // ----------------------------
-    const createSampleTasks = () => {
-      const today = new Date();
-      const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-      const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
-      const nextMonth = new Date(today); nextMonth.setMonth(nextMonth.getMonth() + 1);
-  
-      const sample = [
-        { id: Date.now() + 1, text: 'Finalize Q4 Project Proposal', notes: 'Incorporate feedback.', completed: false, dueDate: yesterday.toISOString().split('T')[0], category: 'Work', priority: 'high', recurrence: '', subtasks: [], ownerId: currentUser, ownerName: currentUser, isShared: false, sharedWith: [] },
-        { id: Date.now() + 2, text: 'Morning Workout', notes: 'Cardio + strength', completed: false, dueDate: today.toISOString().split('T')[0], category: 'Health', priority: 'medium', recurrence: 'daily', subtasks: [], ownerId: currentUser, ownerName: currentUser, isShared: false, sharedWith: [] },
-        { id: Date.now() + 3, text: 'Read Chapter 5: Clean Code', notes: '', completed: false, dueDate: tomorrow.toISOString().split('T')[0], category: 'Learning', priority: 'low', recurrence: '', subtasks: [], ownerId: currentUser, ownerName: currentUser, isShared: false, sharedWith: [] }
-      ];
-      localStorage.setItem('tasks_' + currentUser, JSON.stringify(sample));
-      return sample;
-    };
-  
-    // ----------------------------
-    // VIDEO BACKGROUND ROTATION
-    // ----------------------------
-    const videoSources = [
-      { title: 'Productive Workspace', url: './videos/task-background.mp4' },
-      { title: 'Just a video', url: './videos/background-1.mp4' },
-      { title: 'Tech Data Flow', url: './videos/background-2.mp4' },
-      { title: 'Abstract Particles', url: './videos/background-3.mp4' },
-      { title: 'Calm Clouds', url: 'https://storage.coverr.co/videos/coverr-clouds-sky-5459/1080p.mp4' },
-      { title: 'Sunset Gradient', type: 'css', css: 'linear-gradient(-45deg,#f093fb,#f5576c,#4facfe,#00f2fe)' }
-    ];
-    let currentVideoIndex = 0;
-    let backgroundTimer = null;
-  
-    const setVideoSource = (index) => {
-      clearTimeout(backgroundTimer);
-      if (!videoSources || videoSources.length === 0) return;
-      currentVideoIndex = (index + videoSources.length) % videoSources.length;
-      const source = videoSources[currentVideoIndex];
-  
-      if (bgVideo) { try { bgVideo.pause(); } catch (e) {} bgVideo.src = ''; bgVideo.style.display = 'none'; }
-      document.body.style.background = '';
-  
-      if (source.type === 'css') {
-        document.body.style.background = source.css;
-        if (bgTitle) bgTitle.textContent = source.title;
-        backgroundTimer = setTimeout(() => setVideoSource(currentVideoIndex + 1), 10000);
-      } else {
-        if (bgVideo) {
-          bgVideo.src = source.url;
-          bgVideo.style.display = 'block';
-          if (bgTitle) bgTitle.textContent = source.title;
-          bgVideo.play().catch(err => console.warn('Video play blocked', err));
-        } else {
-          document.body.style.background = 'linear-gradient(180deg,#111,#333)';
-          if (bgTitle) bgTitle.textContent = source.title;
-        }
-      }
-    };
-  
-    if (bgVideo) bgVideo.addEventListener('ended', () => setVideoSource(currentVideoIndex + 1));
-    if (bgPrevBtn) bgPrevBtn.addEventListener('click', () => setVideoSource(currentVideoIndex - 1));
-    if (bgNextBtn) bgNextBtn.addEventListener('click', () => setVideoSource(currentVideoIndex + 1));
-    setVideoSource(0);
-  
-    // ----------------------------
-    // RENDER / UI helpers
-    // ----------------------------
-    const updateTaskCount = () => {
-      if (!taskCountEl) return;
-      const left = tasks.filter(t => !t.completed).length;
-      taskCountEl.textContent = `${left} tasks left`;
-    };
-  
-    const renderCategories = () => {
-      if (taskCategorySelect) {
-        taskCategorySelect.innerHTML = '<option value="">No Category</option>';
-        (categories || []).forEach(cat => {
-          const opt = document.createElement('option'); opt.value = cat; opt.textContent = cat;
-          taskCategorySelect.appendChild(opt);
-        });
-      }
-      if (categoryListEl) {
-        categoryListEl.innerHTML = '';
-        (categories || []).forEach(cat => {
-          const tag = document.createElement('div'); tag.className = 'category-tag';
-          tag.innerHTML = `${cat} <button class="remove-category" data-category="${cat}">&times;</button>`;
-          categoryListEl.appendChild(tag);
-        });
-      }
-      if (categoryFilterContainer) {
-        categoryFilterContainer.innerHTML = '';
-        (categories || []).forEach(cat => {
-          const btn = document.createElement('button'); btn.className = 'category-filter-btn'; btn.dataset.category = cat; btn.textContent = cat;
-          categoryFilterContainer.appendChild(btn);
-        });
-      }
-    };
-  
-    const createTaskElement = (task) => {
-      const li = document.createElement('li');
-      const isOwner = task.ownerId === currentUser;
-      li.className = `task-item priority-${task.priority} ${!isOwner ? 'shared-task' : ''}`;
-      li.draggable = Boolean(isOwner);
-      li.dataset.id = task.id;
-  
-      const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-      const today = new Date(); today.setHours(0,0,0,0);
-      const isOverdue = dueDate && dueDate < today && !task.completed;
-      if (isOverdue) li.classList.add('overdue');
-  
-      li.innerHTML = `
-        <div class="task-main-content">
-          <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''} ${!isOwner ? 'disabled' : ''}/>
-          <div class="task-content">
-            <span class="task-text">${escapeHtml(task.text)}</span>
-            ${task.notes ? `<div class="task-notes">${escapeHtml(task.notes)}</div>` : ''}
-          </div>
-          <div class="task-meta">
-            ${!isOwner ? `<span class="shared-task-indicator">Shared by ${escapeHtml(task.ownerName || '')}</span>` : ''}
-            <span class="task-priority">${task.priority}</span>
-            ${task.category ? `<span class="task-category-tag">${escapeHtml(task.category)}</span>` : ''}
-            ${task.dueDate ? `<span class="task-due-date">${task.dueDate}</span>` : ''}
-            ${isOwner ? `<button class="edit-task-btn" title="Edit Task"><i class="fas fa-edit"></i></button>` : ''}
-            ${isOwner ? `<button class="delete-btn" title="Delete Task">&times;</button>` : ''}
-          </div>
-        </div>
-      `;
-      return li;
-    };
-  
-    function escapeHtml(text) {
-      if (!text && text !== 0) return '';
-      return text.toString()
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-  
-    const renderTasks = () => {
-      if (!taskList) return;
-      taskList.innerHTML = '';
-      const searchVal = searchInput ? (searchInput.value || '').toLowerCase() : '';
-      const today = new Date(); today.setHours(0,0,0,0);
-  
-      const filtered = (tasks || []).filter(task => {
-        const isOwner = task.ownerId === currentUser;
-        const isSharedWithMe = task.sharedWith && task.sharedWith.includes(currentUser);
-        const visible = isOwner || isSharedWithMe;
-        const matchesStatus = currentFilter === 'all' || (currentFilter === 'active' && !task.completed) || (currentFilter === 'completed' && task.completed);
-        const matchesCategory = !currentCategoryFilter || task.category === currentCategoryFilter;
-        const matchesSearch = (task.text && task.text.toLowerCase().includes(searchVal)) || (task.notes && task.notes.toLowerCase().includes(searchVal));
-        return visible && matchesStatus && matchesCategory && matchesSearch;
-      });
-  
-      filtered.forEach(t => {
-        const el = createTaskElement(t);
-        taskList.appendChild(el);
-      });
-  
-      updateTaskCount();
-    };
-  
-    // ----------------------------
-    // TASK OPERATIONS
-    // ----------------------------
-    const addTask = (text, notes, dueDate, category, priority, recurrence, isShared, sharedWith) => {
-      const newTask = {
-        id: Date.now(),
-        text: text || '',
-        notes: notes || '',
-        completed: false,
-        dueDate: dueDate || '',
-        category: category || '',
-        priority: priority || 'medium',
-        recurrence: recurrence || '',
-        subtasks: [],
-        ownerId: currentUser,
-        ownerName: (allUsers[currentUser] && allUsers[currentUser].displayName) || currentUser,
-        isShared: Boolean(isShared),
-        sharedWith: sharedWith || []
-      };
-      tasks.unshift(newTask);
-      saveTasks();
-      scheduleNotification(newTask);
-      if (taskList) {
-        const el = createTaskElement(newTask);
-        taskList.prepend(el);
-        setTimeout(() => el.classList.add('task-enter'), 10);
-        updateTaskCount();
-      }
-    };
-  
-    const deleteTask = (id) => {
-      if (!taskList) return;
-      const taskEl = taskList.querySelector(`.task-item[data-id="${id}"]`);
-      if (!taskEl) return;
-      taskEl.classList.add('task-exit');
-      taskEl.addEventListener('animationend', () => {
-        tasks = tasks.filter(t => t.id !== id);
-        saveTasks();
-        renderTasks();
-      }, { once: true });
-    };
-  
-    const toggleTask = (id) => {
-      const task = tasks.find(t => t.id === id);
-      if (!task) return;
-      task.completed = !task.completed;
-      task.completedAt = task.completed ? new Date().toISOString() : null;
-      saveTasks();
-      renderTasks();
-    };
-  
-    const editTask = (id) => {
-      const task = tasks.find(t => t.id === id);
-      if (!task || task.ownerId !== currentUser) return;
-      if (taskModalTitle) taskModalTitle.textContent = 'Edit Task';
-      const idEl = document.getElementById('edit-task-id');
-      const textEl = document.getElementById('edit-task-text');
-      const notesEl = document.getElementById('edit-task-notes');
-      const dateEl = document.getElementById('edit-task-date');
-      const categoryEl = document.getElementById('edit-task-category');
-      const priorityEl = document.getElementById('edit-task-priority');
-      if (idEl) idEl.value = task.id;
-      if (textEl) textEl.value = task.text;
-      if (notesEl) notesEl.value = task.notes;
-      if (dateEl) dateEl.value = task.dueDate;
-      if (categoryEl) categoryEl.value = task.category;
-      if (priorityEl) priorityEl.value = task.priority;
-      if (isSharedTaskCheckbox) isSharedTaskCheckbox.checked = task.isShared;
-      if (friendSelectContainer) friendSelectContainer.style.display = task.isShared ? 'block' : 'none';
-      renderFriendCheckboxes();
-      if (task.isShared) {
-        const boxes = document.querySelectorAll('input[name="share-friend"]');
-        boxes.forEach(cb => { cb.checked = task.sharedWith.includes(cb.value); });
-      }
-      if (taskModal) taskModal.style.display = 'flex';
-    };
-  
-    const updateTask = (id, updatedData) => {
-      const idx = tasks.findIndex(t => t.id === id);
-      if (idx === -1) return;
-      tasks[idx] = { ...tasks[idx], ...updatedData };
-      saveTasks();
-      scheduleNotification(tasks[idx]);
-      renderTasks();
-    };
-  
-    const reorderTasks = (startIndex, endIndex) => {
-      const [removed] = tasks.splice(startIndex, 1);
-      tasks.splice(endIndex, 0, removed);
-      saveTasks();
-      renderTasks();
-    };
-  
-    // ----------------------------
-    // RECURRING TASKS
-    // ----------------------------
-    const calculateNextDueDate = (currentDate, recurrence) => {
-      const d = new Date(currentDate);
-      if (recurrence === 'daily') d.setDate(d.getDate() + 1);
-      if (recurrence === 'weekly') d.setDate(d.getDate() + 7);
-      if (recurrence === 'monthly') d.setMonth(d.getMonth() + 1);
-      return d.toISOString().split('T')[0];
-    };
-  
-    const checkRecurringTasks = () => {
-      const todayStr = new Date().toISOString().split('T')[0];
-      (tasks || []).forEach(task => {
-        if (task.recurrence && task.dueDate && task.dueDate <= todayStr && !task.completed && task.ownerId === currentUser) {
-          const newTask = { ...task, id: Date.now(), completed: false, dueDate: calculateNextDueDate(task.dueDate, task.recurrence) };
-          tasks.push(newTask);
-          task.completed = true;
-        }
-      });
-      saveTasks();
-      renderTasks();
-    };
-  
-    // ----------------------------
-    // DASHBOARD & EXPORT
-    // ----------------------------
-    const getWeeklyCompletedData = () => {
-      const today = new Date();
-      const oneWeekAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
-      const data = [0,0,0,0,0,0,0];
-      (tasks || []).filter(t => t.completed && t.completedAt && new Date(t.completedAt) >= oneWeekAgo).forEach(t => {
-        const day = new Date(t.completedAt).getDay();
-        data[day === 0 ? 6 : day - 1]++;
-      });
-      return data;
-    };
-  
-    const getCategoryData = () => {
-      const map = {};
-      (tasks || []).forEach(t => {
-        if (t.category) map[t.category] = (map[t.category] || 0) + 1;
-      });
-      return map;
-    };
-  
-    const renderCharts = () => {
-      if (typeof Chart === 'undefined') return;
-      if (!weeklyChartEl || !categoryChartEl) return;
-      try {
-        const weekCtx = weeklyChartEl.getContext('2d');
-        const weekData = getWeeklyCompletedData();
-        new Chart(weekCtx, { type: 'bar', data: { labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], datasets: [{ label:'Completed', data: weekData }] }, options: { scales:{ y:{ beginAtZero:true } } } });
-        const catCtx = categoryChartEl.getContext('2d');
-        const catData = getCategoryData();
-        new Chart(catCtx, { type: 'pie', data: { labels: Object.keys(catData), datasets: [{ data: Object.values(catData) }] } });
-      } catch (err) { console.warn('Chart render error', err); }
-    };
-  
-    const showDashboard = () => {
-      if (dashboardModal) dashboardModal.style.display = 'flex';
-      renderCharts();
-    };
-  
-    const exportTasks = () => {
-      const dataStr = JSON.stringify(tasks, null, 2);
-      const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-      const filename = `tasks_${new Date().toISOString().split('T')[0]}.json`;
-      const a = document.createElement('a'); a.href = dataUri; a.download = filename;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    };
-  
-    // ----------------------------
-    // NOTIFICATIONS
-    // ----------------------------
-    const requestNotificationPermission = () => { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); };
-  
-    const scheduleNotification = (task) => {
-      if (!task || !task.dueDate) return;
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
-      const due = new Date(task.dueDate);
-      const now = new Date();
-      const msBefore = (60 * 60 * 1000); // 1 hour
-      const timeUntil = due - now - msBefore;
-      if (timeUntil > 0) {
-        setTimeout(() => {
-          try { new Notification('Task Due Soon!', { body: `Task "${task.text}" is due soon.`, icon: './favicon.ico' }); } catch (e) {}
-        }, timeUntil);
-      }
-    };
-  
-    // ----------------------------
-    // SOCIAL (friends/invites)
-    // ----------------------------
-    const renderFriendsList = () => {
-      if (friendRequestsList) {
-        friendRequestsList.innerHTML = '';
-        if (!friendRequests || Object.keys(friendRequests).length === 0) friendRequestsList.innerHTML = '<p>No pending requests.</p>';
-        else {
-          Object.entries(friendRequests).forEach(([username, status]) => {
-            if (status === 'received') {
-              const item = document.createElement('div'); item.className = 'request-item';
-              item.innerHTML = `<span>${escapeHtml(username)} wants to be your friend</span>
-                <div class="request-buttons">
-                  <button class="accept-btn" data-user="${escapeHtml(username)}">Accept</button>
-                  <button class="decline-btn" data-user="${escapeHtml(username)}">Decline</button>
-                </div>`;
-              friendRequestsList.appendChild(item);
-            }
-          });
-        }
-      }
-  
-      if (friendsList) {
-        friendsList.innerHTML = '';
-        if (!friends || friends.length === 0) friendsList.innerHTML = '<p>No friends yet. Invite someone!</p>';
-        else {
-          friends.forEach(f => {
-            const item = document.createElement('div'); item.className = 'friend-item';
-            item.innerHTML = `<span>${escapeHtml(f)}</span> <button class="remove-friend-btn" data-user="${escapeHtml(f)}">Remove</button>`;
-            friendsList.appendChild(item);
-          });
-        }
-        renderFriendCheckboxes();
-      }
-    };
-  
-    const renderFriendCheckboxes = () => {
-      if (!friendCheckboxesContainer) return;
-      friendCheckboxesContainer.innerHTML = '';
-      if (!friends || friends.length === 0) friendCheckboxesContainer.innerHTML = '<p>You have no friends to share with.</p>';
-      else {
-        friends.forEach(f => {
-          const lbl = document.createElement('label');
-          lbl.innerHTML = `<input type="checkbox" name="share-friend" value="${escapeHtml(f)}"> ${escapeHtml(f)}`;
-          friendCheckboxesContainer.appendChild(lbl);
-        });
-      }
-    };
-  
-    const sendInvite = (e) => {
-      if (e && e.preventDefault) e.preventDefault();
-      const recipientRaw = inviteUsernameInput ? inviteUsernameInput.value : '';
-      const recipient = normalizeUsername(recipientRaw);
-      if (!recipient) { alert('Enter a username to invite.'); return; }
-      const users = JSON.parse(localStorage.getItem('users') || '{}');
-      if (!users[recipient]) { alert(`User "${recipientRaw}" does not exist.`); return; }
-      if (recipient === currentUser) { alert('You cannot invite yourself.'); return; }
-      if (friends.includes(recipient)) { alert(`You are already friends with ${recipient}.`); return; }
-      const recRequests = JSON.parse(localStorage.getItem('friendRequests_' + recipient) || '{}');
-      recRequests[currentUser] = 'received';
-      localStorage.setItem('friendRequests_' + recipient, JSON.stringify(recRequests));
-      alert(`Friend request sent to ${recipientRaw}!`);
-      if (inviteForm) inviteForm.reset();
-    };
-  
-    const handleFriendRequestClick = (e) => {
-      const btn = e.target;
-      if (!btn || !btn.dataset) return;
-      const fromUser = btn.dataset.user;
-      if (!fromUser) return;
-      const isAccept = btn.classList && btn.classList.contains('accept-btn');
-      if (isAccept) {
-        if (!friends.includes(fromUser)) friends.push(fromUser);
-        saveFriends();
-      }
-      delete friendRequests[fromUser];
-      saveFriendRequests();
-      const senderFriends = JSON.parse(localStorage.getItem('friends_' + fromUser) || '[]');
-      if (isAccept && !senderFriends.includes(currentUser)) {
-        senderFriends.push(currentUser);
-        localStorage.setItem('friends_' + fromUser, JSON.stringify(senderFriends));
-      }
-      const senderRequests = JSON.parse(localStorage.getItem('friendRequests_' + fromUser) || '{}');
-      delete senderRequests[currentUser];
-      localStorage.setItem('friendRequests_' + fromUser, JSON.stringify(senderRequests));
-      renderFriendsList();
-    };
-  
-    const removeFriend = (e) => {
-      const friendToRemove = e.target ? e.target.dataset.user : null;
-      if (!friendToRemove) return;
-      friends = friends.filter(f => f !== friendToRemove);
-      saveFriends();
-      const otherFriends = JSON.parse(localStorage.getItem('friends_' + friendToRemove) || '[]');
-      const updated = otherFriends.filter(f => f !== currentUser);
-      localStorage.setItem('friends_' + friendToRemove, JSON.stringify(updated));
-      renderFriendsList();
-    };
-  
-    // ----------------------------
-    // EVENT BINDING: central
-    // ----------------------------
-    const setupEventListeners = () => {
-      // task submit
-      if (taskForm) {
-        taskForm.addEventListener('submit', (e) => {
-          e.preventDefault();
-          const text = taskInput ? taskInput.value.trim() : '';
-          if (!text) return;
-          const isShared = isSharedTaskCheckbox ? isSharedTaskCheckbox.checked : false;
-          let sharedWith = [];
-          if (isShared) { const boxes = document.querySelectorAll('input[name="share-friend"]:checked'); sharedWith = Array.from(boxes).map(b => b.value); }
-          addTask(text, taskNotesInput ? taskNotesInput.value : '', taskDateInput ? taskDateInput.value : '', taskCategorySelect ? taskCategorySelect.value : '', taskPrioritySelect ? taskPrioritySelect.value : 'medium', taskRecurrenceSelect ? taskRecurrenceSelect.value : '', isShared, sharedWith);
-          if (taskForm) taskForm.reset();
-          if (friendSelectContainer) friendSelectContainer.style.display = 'none';
-        });
-      }
-  
-      // edit task submit
-      if (editTaskForm) {
-        editTaskForm.addEventListener('submit', (e) => {
-          e.preventDefault();
-          const idEl = document.getElementById('edit-task-id');
-          const id = idEl ? Number(idEl.value) : null;
-          const isShared = isSharedTaskCheckbox ? isSharedTaskCheckbox.checked : false;
-          let sharedWith = [];
-          if (isShared) { const boxes = document.querySelectorAll('input[name="share-friend"]:checked'); sharedWith = Array.from(boxes).map(b => b.value); }
-          const updated = {
-            text: (document.getElementById('edit-task-text') ? document.getElementById('edit-task-text').value : ''),
-            notes: (document.getElementById('edit-task-notes') ? document.getElementById('edit-task-notes').value : ''),
-            dueDate: (document.getElementById('edit-task-date') ? document.getElementById('edit-task-date').value : ''),
-            category: (document.getElementById('edit-task-category') ? document.getElementById('edit-task-category').value : ''),
-            priority: (document.getElementById('edit-task-priority') ? document.getElementById('edit-task-priority').value : ''),
-            isShared, sharedWith
-          };
-          if (id !== null) updateTask(id, updated);
-          if (taskModal) taskModal.style.display = 'none';
-        });
-      }
-  
-      // task list click (toggle, delete, edit)
-      if (taskList) {
-        taskList.addEventListener('click', (e) => {
-          const t = e.target;
-          const li = t.closest('.task-item');
-          if (!li) return;
-          const id = Number(li.dataset.id);
-          if (t.classList.contains('task-checkbox')) toggleTask(id);
-          else if (t.classList.contains('delete-btn')) deleteTask(id);
-          else if (t.closest('.edit-task-btn')) editTask(id);
-        });
-  
-        // drag & drop
-        taskList.addEventListener('dragstart', (e) => { if (e.target && e.target.classList.contains('task-item')) { draggedElement = e.target; e.target.classList.add('dragging'); } });
-        taskList.addEventListener('dragend', (e) => { if (e.target && e.target.classList.contains('task-item')) e.target.classList.remove('dragging'); });
-        taskList.addEventListener('dragover', (e) => { e.preventDefault(); const after = getDragAfterElement(taskList, e.clientY); if (!after) taskList.appendChild(draggedElement); else taskList.insertBefore(draggedElement, after); });
-        taskList.addEventListener('drop', (e) => {
-          e.preventDefault();
-          if (!draggedElement) return;
-          const draggedId = Number(draggedElement.dataset.id);
-          const els = [...taskList.querySelectorAll('.task-item')];
-          const newIndex = els.findIndex(it => it.dataset.id === draggedId.toString());
-          const oldIndex = tasks.findIndex(t => t.id === draggedId);
-          if (oldIndex !== -1 && newIndex !== -1) reorderTasks(oldIndex, newIndex);
-        });
-      }
-  
-      // search, stats, export
-      if (searchInput) searchInput.addEventListener('input', renderTasks);
-      if (statsBtn) statsBtn.addEventListener('click', showDashboard);
-      if (exportBtn) exportBtn.addEventListener('click', exportTasks);
-  
-      // close modals
-      if (closeBtns && closeBtns.length) closeBtns.forEach(btn => btn.addEventListener('click', () => { const modal = btn.closest('.modal'); if (modal) modal.style.display = 'none'; }));
-  
-      // window click for modal background close
-      window.addEventListener('click', (e) => { if (e.target && e.target.classList && e.target.classList.contains('modal')) e.target.style.display = 'none'; });
-  
-      // categories
-      if (addCategoryBtn) addCategoryBtn.addEventListener('click', () => addCategory(categoryInput ? categoryInput.value.trim() : ''));
-      if (categoryInput) categoryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addCategory(categoryInput.value.trim()); });
-      if (categoryListEl) categoryListEl.addEventListener('click', (e) => { if (e.target && e.target.classList && e.target.classList.contains('remove-category')) removeCategory(e.target.dataset.category); });
-  
-      // filter buttons
-      if (filterButtons && filterButtons.length) filterButtons.forEach(btn => btn.addEventListener('click', () => {
-        filterButtons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentFilter = btn.dataset.filter;
-        renderTasks();
-      }));
-  
-      if (categoryFilterContainer) categoryFilterContainer.addEventListener('click', (e) => {
-        if (e.target && e.target.classList && e.target.classList.contains('category-filter-btn')) {
-          const btn = e.target; const category = btn.dataset.category;
-          if (currentCategoryFilter === category) { currentCategoryFilter = null; btn.classList.remove('active'); }
-          else { document.querySelectorAll('.category-filter-btn').forEach(b => b.classList.remove('active')); currentCategoryFilter = category; btn.classList.add('active'); }
-          renderTasks();
-        }
-      });
-  
-      // friends modal open and invite
-      if (friendsBtn) friendsBtn.addEventListener('click', () => { if (friendsModal) friendsModal.style.display = 'flex'; renderFriendsList(); });
-      if (inviteForm) inviteForm.addEventListener('submit', sendInvite);
-      if (friendRequestsList) friendRequestsList.addEventListener('click', handleFriendRequestClick);
-      if (friendsList) friendsList.addEventListener('click', (e) => { if (e.target && e.target.classList && e.target.classList.contains('remove-friend-btn')) removeFriend(e); });
-  
-      if (isSharedTaskCheckbox) isSharedTaskCheckbox.addEventListener('change', (e) => { if (friendSelectContainer) friendSelectContainer.style.display = e.target.checked ? 'block' : 'none'; });
-  
-      // keyboard shortcut
-      setupKeyboardShortcuts();
-    };
-  
-    // ----------------------------
-    // DRAG & DROP HELPER
-    // ----------------------------
-    const getDragAfterElement = (container, y) => {
-      const draggableElements = [...container.querySelectorAll('.task-item:not(.dragging)')];
-      return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
-        else return closest;
-      }, { offset: Number.NEGATIVE_INFINITY }).element;
-    };
-  
-    // ----------------------------
-    // CATEGORY HELPERS
-    // ----------------------------
-    const addCategory = (name) => {
-      if (!name) return;
-      if (!categories.includes(name)) { categories.push(name); saveCategories(); renderCategories(); }
-    };
-  
-    const removeCategory = (name) => {
-      if (!name || name === 'General') return;
-      categories = categories.filter(c => c !== name);
-      tasks.forEach(t => { if (t.category === name) t.category = ''; });
-      saveCategories(); saveTasks(); renderCategories(); renderTasks();
-    };
-  
-    // ----------------------------
-    // KEYBOARD SHORTCUTS
-    // ----------------------------
-    function setupKeyboardShortcuts() {
-      document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); if (searchInput) searchInput.focus(); }
-      });
-    }
-  
-    // ----------------------------
-    // INIT (after signin)
-    // ----------------------------
-    const init = () => {
-      // ensure arrays are defined
-      tasks = tasks || [];
-      categories = categories || ['General'];
-      friendRequests = friendRequests || {};
-      friends = friends || [];
-      if (!tasks || tasks.length === 0) tasks = createSampleTasks();
-      renderCategories();
-      renderTasks();
-      setupEventListeners();
-      checkRecurringTasks();
-      requestNotificationPermission();
-      renderFriendsList();
-    };
-  
-    // ----------------------------
-    // INITIAL RUN: migrate users then show appropriate screen
-    // moved here so init() is defined before showApp calls it
-    // ----------------------------
-    migrateUsersToNormalized();
-    allUsers = JSON.parse(localStorage.getItem('users') || '{}');
-  
-    if (currentUser) showApp(); else showAuthScreen();
-  
-    // Attach high-level auth event handlers
-    if (authForm) authForm.addEventListener('submit', handleAuth);
-    if (showSignupAnchor) showSignupAnchor.addEventListener('click', (e) => { e.preventDefault(); switchToSignUp(e); });
-    if (signOutBtn) signOutBtn.addEventListener('click', signOut);
-  
-    // ----------------------------
-    // Finally: attach a small global listener to wire sign-in anchors created dynamically
-    // ----------------------------
-    (function wireAuthAnchors() {
-      document.body.addEventListener('click', (e) => {
-        const target = e.target;
-        if (!target) return;
-        if (target.id === 'show-signup') { e.preventDefault(); switchToSignUp(e); }
-        if (target.id === 'show-signin') { e.preventDefault(); switchToSignIn(e); }
-      });
-    })();
-  
-    // ----------------------------
-    // END of main closure
-    // ----------------------------
-  }); // end DOMContentLoaded
-  
+// script.js (module) - Firebase Auth + Firestore integrated + robust background video
+// Make sure your HTML includes: <script type="module" src="script.js"></script>
+
+/* ===========================
+   Firebase imports (CDN modular SDK)
+   =========================== */
+   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+   import {
+     getAuth,
+     createUserWithEmailAndPassword,
+     signInWithEmailAndPassword,
+     signOut as fbSignOut,
+     onAuthStateChanged
+   } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
+   import {
+     getFirestore, doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove, deleteField,
+     collection, addDoc, query, where, onSnapshot, orderBy
+   } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
+   
+   /* ===========================
+      Firebase config — keep your real config here
+      =========================== */
+   const firebaseConfig = {
+     apiKey: "AIzaSyBZ6Of3Ow2lSX-8svE08kSXpdS67c1wVZA",
+     authDomain: "task-manager-14ce4.firebaseapp.com",
+     projectId: "task-manager-14ce4",
+     storageBucket: "task-manager-14ce4.appspot.com",
+     messagingSenderId: "770612132429",
+     appId: "1:770612132429:web:e07578a974f55c7446fa04",
+     measurementId: "G-ET1Z1WG3W5"
+   };
+   
+   const app = initializeApp(firebaseConfig);
+   const auth = getAuth(app);
+   const db = getFirestore(app);
+   
+   /* ===========================
+      Helpers: normalize username & synthetic email
+      =========================== */
+   const normalizeUsername = (raw) => (raw || '').toString().trim().toLowerCase();
+   const usernameToEmail = (normalizedUsername) => `${normalizedUsername}@taskmanager.local`;
+   
+   /* ===========================
+      DOM: element getters (deferred)
+      =========================== */
+   const authModal = () => document.getElementById('auth-modal');
+   const authForm = () => document.getElementById('auth-form');
+   const authTitle = () => document.getElementById('auth-title');
+   const authSubmitBtn = () => document.getElementById('auth-submit-btn');
+   const showSignupLink = () => document.getElementById('show-signup');
+   const appContainer = () => document.getElementById('app');
+   const signOutBtn = () => document.getElementById('sign-out-btn');
+   const currentUserDisplay = () => document.getElementById('current-user-display');
+   
+   const taskForm = () => document.getElementById('task-form');
+   const taskInput = () => document.getElementById('task-input');
+   const taskNotesInput = () => document.getElementById('task-notes');
+   const taskDateInput = () => document.getElementById('task-date');
+   const taskCategorySelect = () => document.getElementById('task-category');
+   const taskPrioritySelect = () => document.getElementById('task-priority');
+   const taskRecurrenceSelect = () => document.getElementById('task-recurrence');
+   const taskList = () => document.getElementById('task-list');
+   const filterButtons = () => document.querySelectorAll('.filter-btn');
+   const categoryFilterContainer = () => document.getElementById('category-filter-buttons');
+   const taskCountEl = () => document.getElementById('task-count');
+   const categoryInput = () => document.getElementById('category-input');
+   const addCategoryBtn = () => document.getElementById('add-category-btn');
+   const categoryListEl = () => document.getElementById('category-list');
+   const searchInput = () => document.getElementById('search-input');
+   const statsBtn = () => document.getElementById('stats-btn');
+   const exportBtn = () => document.getElementById('export-btn');
+   const taskModal = () => document.getElementById('task-modal');
+   const editTaskForm = () => document.getElementById('edit-task-form');
+   const dashboardModal = () => document.getElementById('dashboard-modal');
+   const closeBtns = () => document.querySelectorAll('.close-btn');
+   const friendsBtn = () => document.getElementById('friends-btn');
+   const friendsModal = () => document.getElementById('friends-modal');
+   const inviteForm = () => document.getElementById('invite-form');
+   const inviteUsernameInput = () => document.getElementById('invite-username');
+   const friendRequestsList = () => document.getElementById('friend-requests-list');
+   const friendsList = () => document.getElementById('friends-list');
+   const isSharedTaskCheckbox = () => document.getElementById('is-shared-task');
+   const friendSelectContainer = () => document.getElementById('friend-select-container');
+   const friendCheckboxesContainer = () => document.getElementById('friend-checkboxes');
+   const bgVideoEl = () => document.getElementById('bg-video');
+   const bgTitleEl = () => document.getElementById('bg-title');
+   const bgPrevBtn = () => document.getElementById('bg-prev-btn');
+   const bgNextBtn = () => document.getElementById('bg-next-btn');
+   
+   /* ===========================
+      App state
+      =========================== */
+   let currentUser = null; // normalized username
+   let currentUserDisplayName = '';
+   let unsubscribeTasksListener = null;
+   let localCategories = ['General'];
+   
+   /* ===========================
+      Utility: escape HTML
+      =========================== */
+   function escapeHtml(text) {
+     if (!text && text !== 0) return '';
+     return String(text)
+       .replace(/&/g, "&amp;")
+       .replace(/</g, "&lt;")
+       .replace(/>/g, "&gt;")
+       .replace(/"/g, "&quot;")
+       .replace(/'/g, "&#039;");
+   }
+   
+   /* ===========================
+      Firestore: user helpers
+      =========================== */
+   async function createUserFirestore(normalizedUsername, displayName) {
+     const userRef = doc(db, 'users', normalizedUsername);
+     const snap = await getDoc(userRef);
+     if (snap.exists()) return { ok: false, reason: 'exists' };
+     await setDoc(userRef, {
+       displayName: displayName || normalizedUsername,
+       createdAt: new Date(),
+       friends: [],
+       friendRequests: {}
+     });
+     return { ok: true };
+   }
+   
+   async function getUserDoc(normalizedUsername) {
+     const userRef = doc(db, 'users', normalizedUsername);
+     const snap = await getDoc(userRef);
+     return snap.exists() ? snap.data() : null;
+   }
+   
+   /* ===========================
+      Tasks: listener and renderer
+      =========================== */
+   function startTasksListener() {
+     // unsubscribe previous if any
+     if (typeof unsubscribeTasksListener === 'function') {
+       try { unsubscribeTasksListener(); } catch (e) {}
+       unsubscribeTasksListener = null;
+     }
+     const tl = taskList();
+     if (!tl) return;
+   
+     const tasksCollection = collection(db, 'tasks');
+     const qOwned = query(tasksCollection, where('ownerId', '==', currentUser), orderBy('createdAt', 'desc'));
+     const qShared = query(tasksCollection, where('sharedWith', 'array-contains', currentUser), orderBy('createdAt', 'desc'));
+   
+     const tasksMap = new Map();
+   
+     const unsub1 = onSnapshot(qOwned, (snap) => {
+       // remove old owned entries
+       for (const [k, v] of tasksMap) {
+         if (v.ownerId === currentUser) tasksMap.delete(k);
+       }
+       snap.forEach(d => tasksMap.set(d.id, { id: d.id, ...d.data() }));
+       renderTasksFromMap(tasksMap);
+     }, (err) => console.warn('Tasks owned listener error', err));
+   
+     const unsub2 = onSnapshot(qShared, (snap) => {
+       // remove previous shared entries that matched before
+       for (const [k, v] of tasksMap) {
+         if (v.ownerId !== currentUser && Array.isArray(v.sharedWith) && v.sharedWith.includes(currentUser)) tasksMap.delete(k);
+       }
+       snap.forEach(d => tasksMap.set(d.id, { id: d.id, ...d.data() }));
+       renderTasksFromMap(tasksMap);
+     }, (err) => console.warn('Tasks shared listener error', err));
+   
+     unsubscribeTasksListener = () => {
+       try { unsub1(); } catch (e) {}
+       try { unsub2(); } catch (e) {}
+     };
+   }
+   
+   function renderTasksFromMap(tasksMap) {
+     const tl = taskList();
+     if (!tl) return;
+     tl.innerHTML = '';
+     const arr = Array.from(tasksMap.values()).sort((a, b) => {
+       const ta = a.createdAt ? (a.createdAt.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt).getTime()) : 0;
+       const tb = b.createdAt ? (b.createdAt.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime()) : 0;
+       return tb - ta;
+     });
+     arr.forEach(task => {
+       const li = createTaskElement(task);
+       tl.appendChild(li);
+     });
+     updateTaskCountUI();
+   }
+   
+   function createTaskElement(task) {
+     const li = document.createElement('li');
+     const isOwner = task.ownerId === currentUser;
+     li.className = `task-item priority-${task.priority || 'medium'} ${!isOwner ? 'shared-task' : ''}`;
+     li.dataset.id = task.id;
+     li.draggable = Boolean(isOwner);
+   
+     const dueDateStr = task.dueDate || '';
+     li.innerHTML = `
+       <div class="task-main-content">
+         <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''} ${!isOwner ? 'disabled' : ''}/>
+         <div class="task-content">
+           <span class="task-text">${escapeHtml(task.text)}</span>
+           ${task.notes ? `<div class="task-notes">${escapeHtml(task.notes)}</div>` : ''}
+         </div>
+         <div class="task-meta">
+           ${!isOwner ? `<span class="shared-task-indicator">Shared by ${escapeHtml(task.ownerName || task.ownerId)}</span>` : ''}
+           <span class="task-priority">${escapeHtml(task.priority || '')}</span>
+           ${task.category ? `<span class="task-category-tag">${escapeHtml(task.category)}</span>` : ''}
+           ${dueDateStr ? `<span class="task-due-date">${escapeHtml(dueDateStr)}</span>` : ''}
+           ${isOwner ? `<button class="edit-task-btn" title="Edit Task"><i class="fas fa-edit"></i></button>` : ''}
+           ${isOwner ? `<button class="delete-btn" title="Delete Task">&times;</button>` : ''}
+         </div>
+       </div>
+     `;
+     return li;
+   }
+   
+   function updateTaskCountUI() {
+     const el = taskCountEl();
+     if (!el) return;
+     const items = document.querySelectorAll('#task-list .task-item');
+     let left = 0;
+     items.forEach(node => {
+       const cb = node.querySelector('.task-checkbox');
+       if (cb && !cb.checked) left++;
+     });
+     el.textContent = `${left} tasks left`;
+   }
+   
+   /* ===========================
+      CRUD: tasks (remote)
+      =========================== */
+   async function addTaskRemote({ text, notes, dueDate, category, priority, recurrence, isShared, sharedWith }) {
+     if (!currentUser) throw new Error('not signed in');
+     const docRef = await addDoc(collection(db, 'tasks'), {
+       ownerId: currentUser,
+       ownerName: currentUserDisplayName || currentUser,
+       text: text || '',
+       notes: notes || '',
+       dueDate: dueDate || '',
+       category: category || '',
+       priority: priority || 'medium',
+       recurrence: recurrence || '',
+       isShared: Boolean(isShared),
+       sharedWith: sharedWith || [],
+       completed: false,
+       createdAt: new Date()
+     });
+     return { ok: true, id: docRef.id };
+   }
+   
+   async function updateTaskRemote(id, updates) {
+     const tRef = doc(db, 'tasks', id);
+     await updateDoc(tRef, updates);
+     return { ok: true };
+   }
+   
+   async function deleteTaskRemote(id) {
+     const tRef = doc(db, 'tasks', id);
+     // soft-delete pattern used here; you can replace with deleteDoc(tRef) if you import it
+     await updateDoc(tRef, { deleted: true });
+     return { ok: true };
+   }
+   
+   /* ===========================
+      Friends / invites
+      =========================== */
+   async function sendInviteRemote(recipientRaw) {
+     const candidate = normalizeUsername(recipientRaw);
+     if (!candidate) throw new Error('no recipient');
+     if (candidate === currentUser) return { ok: false, reason: 'self' };
+     const recipientRef = doc(db, 'users', candidate);
+     const snap = await getDoc(recipientRef);
+     if (!snap.exists()) return { ok: false, reason: 'notfound' };
+     await updateDoc(recipientRef, { [`friendRequests.${currentUser}`]: 'received' });
+     return { ok: true };
+   }
+   
+   async function acceptInviteRemote(fromUser) {
+     const meRef = doc(db, 'users', currentUser);
+     const senderRef = doc(db, 'users', fromUser);
+     await updateDoc(meRef, { friends: arrayUnion(fromUser), [`friendRequests.${fromUser}`]: deleteField() });
+     await updateDoc(senderRef, { friends: arrayUnion(currentUser) });
+     return { ok: true };
+   }
+   
+   async function declineInviteRemote(fromUser) {
+     const meRef = doc(db, 'users', currentUser);
+     await updateDoc(meRef, { [`friendRequests.${fromUser}`]: deleteField() });
+     return { ok: true };
+   }
+   
+   /* ===========================
+      UI render helpers: friends
+      =========================== */
+   function renderFriendRequests(requestsMap) {
+     const el = friendRequestsList();
+     if (!el) return;
+     el.innerHTML = '';
+     const entries = Object.entries(requestsMap || {});
+     if (entries.length === 0) {
+       el.innerHTML = '<p>No pending requests.</p>';
+       return;
+     }
+     entries.forEach(([from, status]) => {
+       if (status === 'received') {
+         const item = document.createElement('div');
+         item.className = 'request-item';
+         item.innerHTML = `<span>${escapeHtml(from)} wants to be your friend</span>
+           <div class="request-buttons">
+             <button class="accept-btn" data-user="${escapeHtml(from)}">Accept</button>
+             <button class="decline-btn" data-user="${escapeHtml(from)}">Decline</button>
+           </div>`;
+         el.appendChild(item);
+       }
+     });
+   }
+   
+   function renderFriendsListUI(friendsArr) {
+     const el = friendsList();
+     if (!el) return;
+     el.innerHTML = '';
+     if (!Array.isArray(friendsArr) || friendsArr.length === 0) {
+       el.innerHTML = '<p>No friends yet. Invite someone!</p>';
+       return;
+     }
+     friendsArr.forEach(f => {
+       const item = document.createElement('div'); item.className = 'friend-item';
+       item.innerHTML = `<span>${escapeHtml(f)}</span> <button class="remove-friend-btn" data-user="${escapeHtml(f)}">Remove</button>`;
+       el.appendChild(item);
+     });
+     renderFriendCheckboxesUI(friendsArr);
+   }
+   
+   function renderFriendCheckboxesUI(friendsArr) {
+     const c = friendCheckboxesContainer();
+     if (!c) return;
+     c.innerHTML = '';
+     if (!Array.isArray(friendsArr) || friendsArr.length === 0) {
+       c.innerHTML = '<p>You have no friends to share with.</p>';
+       return;
+     }
+     friendsArr.forEach(f => {
+       const label = document.createElement('label');
+       label.innerHTML = `<input type="checkbox" name="share-friend" value="${escapeHtml(f)}"> ${escapeHtml(f)}`;
+       c.appendChild(label);
+     });
+   }
+   
+   /* ===========================
+      Auth UI flows + helpers
+      =========================== */
+   function showAppUI() {
+     const authM = authModal();
+     const appC = appContainer();
+     const display = currentUserDisplay();
+     if (authM) authM.style.display = 'none';
+     if (appC) appC.style.display = 'flex';
+     if (display) display.textContent = currentUserDisplayName || currentUser || '';
+     startTasksListener();
+     loadAndRenderUserData();
+   }
+   
+   function showAuthUI() {
+     if (authModal()) authModal().style.display = 'flex';
+     if (appContainer()) appContainer().style.display = 'none';
+     if (typeof unsubscribeTasksListener === 'function') {
+       try { unsubscribeTasksListener(); } catch (e) {}
+       unsubscribeTasksListener = null;
+     }
+   }
+   
+   async function loadAndRenderUserData() {
+     if (!currentUser) return;
+     const udoc = await getUserDoc(currentUser);
+     if (udoc) {
+       currentUserDisplayName = udoc.displayName || currentUser;
+       renderFriendRequests(udoc.friendRequests || {});
+       renderFriendsListUI(udoc.friends || []);
+     } else {
+       await createUserFirestore(currentUser, currentUser);
+       renderFriendRequests({});
+       renderFriendsListUI([]);
+     }
+   }
+   
+   /* ===========================
+      Event wiring (DOMContentLoaded)
+      =========================== */
+   document.addEventListener('DOMContentLoaded', () => {
+     // Auth form (signup/signin)
+     const authFormEl = authForm();
+     if (authFormEl) {
+       authFormEl.addEventListener('submit', async (e) => {
+         e.preventDefault();
+         const usernameRaw = (document.getElementById('auth-username') || {}).value || '';
+         const password = (document.getElementById('auth-password') || {}).value || '';
+         if (!usernameRaw || !password) { alert('Enter username & password'); return; }
+         const normalized = normalizeUsername(usernameRaw);
+         const syntheticEmail = usernameToEmail(normalized);
+   
+         const isSigningUp = (authTitle() && authTitle().textContent && authTitle().textContent.toLowerCase().includes('sign up')) || false;
+   
+         if (isSigningUp) {
+           try {
+             await createUserWithEmailAndPassword(auth, syntheticEmail, password);
+             await createUserFirestore(normalized, usernameRaw);
+             currentUser = normalized;
+             currentUserDisplayName = usernameRaw;
+             showAppUI();
+           } catch (err) {
+             console.error('signup error', err);
+             alert('Signup failed: ' + (err.message || err.code || 'unknown'));
+           }
+         } else {
+           try {
+             await signInWithEmailAndPassword(auth, syntheticEmail, password);
+           } catch (err) {
+             console.error('signin error', err);
+             alert('Sign in failed: Invalid username or password.');
+           }
+         }
+       });
+     }
+   
+     // toggle show-signup / show-signin anchors (delegated)
+     document.body.addEventListener('click', (e) => {
+       const el = e.target;
+       if (!el) return;
+       if (el.id === 'show-signup') {
+         e.preventDefault();
+         if (authTitle()) authTitle().textContent = 'Sign Up';
+         if (authSubmitBtn()) authSubmitBtn().textContent = 'Sign Up';
+         el.innerHTML = "Already have an account? <a href=\"#\" id=\"show-signin\">Sign In</a>";
+         return;
+       }
+       if (el.id === 'show-signin') {
+         e.preventDefault();
+         if (authTitle()) authTitle().textContent = 'Sign In';
+         if (authSubmitBtn()) authSubmitBtn().textContent = 'Sign In';
+         el.innerHTML = "Don't have an account? <a href=\"#\" id=\"show-signup\">Sign Up</a>";
+         return;
+       }
+     });
+   
+     // sign out
+     const signOutBtnEl = signOutBtn();
+     if (signOutBtnEl) {
+       signOutBtnEl.addEventListener('click', async () => {
+         try {
+           await fbSignOut(auth);
+           currentUser = null; currentUserDisplayName = '';
+           showAuthUI();
+         } catch (err) { console.warn('signout error', err); }
+       });
+     }
+   
+     // add task
+     const taskFormEl = taskForm();
+     if (taskFormEl) {
+       taskFormEl.addEventListener('submit', async (e) => {
+         e.preventDefault();
+         if (!currentUser) { alert('Sign in first'); return; }
+         const text = taskInput() ? taskInput().value.trim() : '';
+         if (!text) return;
+         const notes = taskNotesInput() ? taskNotesInput().value : '';
+         const dueDate = taskDateInput() ? taskDateInput().value : '';
+         const category = taskCategorySelect() ? taskCategorySelect().value : '';
+         const priority = taskPrioritySelect() ? taskPrioritySelect().value : 'medium';
+         const isShared = isSharedTaskCheckbox() ? isSharedTaskCheckbox().checked : false;
+         let sharedWith = [];
+         if (isShared) {
+           const boxes = document.querySelectorAll('input[name="share-friend"]:checked');
+           sharedWith = Array.from(boxes).map(b => b.value);
+         }
+         try {
+           await addTaskRemote({ text, notes, dueDate, category, priority, isShared, sharedWith });
+           if (taskFormEl) taskFormEl.reset();
+           if (friendSelectContainer()) friendSelectContainer().style.display = 'none';
+         } catch (err) { console.error('add task error', err); alert('Add task failed'); }
+       });
+     }
+   
+     // task list click (toggle, edit, delete)
+     const tl = taskList();
+     if (tl) {
+       tl.addEventListener('click', async (e) => {
+         const t = e.target;
+         const parent = t.closest('.task-item');
+         if (!parent) return;
+         const id = parent.dataset.id;
+         if (t.classList.contains('task-checkbox')) {
+           const checkbox = t;
+           try {
+             await updateTaskRemote(id, { completed: checkbox.checked, completedAt: checkbox.checked ? new Date() : null });
+           } catch (err) { console.warn('toggle error', err); }
+         } else if (t.classList.contains('delete-btn')) {
+           try {
+             await deleteTaskRemote(id);
+           } catch (err) { console.warn('delete error', err); }
+         } else if (t.closest('.edit-task-btn')) {
+           try {
+             const docRef = doc(db, 'tasks', id);
+             const snap = await getDoc(docRef);
+             if (!snap.exists()) return;
+             const task = snap.data();
+             if (document.getElementById('edit-task-text')) document.getElementById('edit-task-text').value = task.text || '';
+             if (document.getElementById('edit-task-notes')) document.getElementById('edit-task-notes').value = task.notes || '';
+             if (document.getElementById('edit-task-date')) document.getElementById('edit-task-date').value = task.dueDate || '';
+             if (document.getElementById('edit-task-category')) document.getElementById('edit-task-category').value = task.category || '';
+             if (document.getElementById('edit-task-priority')) document.getElementById('edit-task-priority').value = task.priority || 'medium';
+             if (document.getElementById('edit-task-id')) document.getElementById('edit-task-id').value = id;
+             if (taskModal()) taskModal().style.display = 'flex';
+           } catch (err) { console.warn('edit open error', err); }
+         }
+       });
+     }
+   
+     // edit submit
+     const editForm = editTaskForm();
+     if (editForm) {
+       editForm.addEventListener('submit', async (e) => {
+         e.preventDefault();
+         const id = (document.getElementById('edit-task-id') || {}).value;
+         const updated = {
+           text: (document.getElementById('edit-task-text') || {}).value || '',
+           notes: (document.getElementById('edit-task-notes') || {}).value || '',
+           dueDate: (document.getElementById('edit-task-date') || {}).value || '',
+           category: (document.getElementById('edit-task-category') || {}).value || '',
+           priority: (document.getElementById('edit-task-priority') || {}).value || 'medium'
+         };
+         try {
+           if (id) await updateTaskRemote(String(id), updated);
+           if (taskModal()) taskModal().style.display = 'none';
+         } catch (err) { console.warn('update task error', err); }
+       });
+     }
+   
+     // friends modal open
+     const friendsBtnEl = friendsBtn();
+     if (friendsBtnEl) friendsBtnEl.addEventListener('click', () => { if (friendsModal()) friendsModal().style.display = 'block'; });
+   
+     // invite form
+     const inviteFormEl = inviteForm();
+     if (inviteFormEl) {
+       inviteFormEl.addEventListener('submit', async (e) => {
+         e.preventDefault();
+         const recipientRaw = inviteUsernameInput() ? inviteUsernameInput().value.trim() : '';
+         if (!recipientRaw) return alert('Enter a username to invite.');
+         try {
+           const res = await sendInviteRemote(recipientRaw);
+           if (!res.ok) {
+             if (res.reason === 'notfound') alert('That user does not exist.');
+             else if (res.reason === 'self') alert('Cannot invite yourself.');
+             else alert('Invite failed.');
+           } else {
+             alert(`Friend request sent to ${recipientRaw}!`);
+             if (inviteFormEl) inviteFormEl.reset();
+           }
+         } catch (err) { console.warn('invite error', err); alert('Invite failed'); }
+       });
+     }
+   
+     // friend request click (accept / decline)
+     const frList = friendRequestsList();
+     if (frList) {
+       frList.addEventListener('click', async (e) => {
+         const btn = e.target;
+         if (!btn || !btn.dataset) return;
+         const fromUser = btn.dataset.user;
+         if (!fromUser) return;
+         if (btn.classList.contains('accept-btn')) {
+           try {
+             await acceptInviteRemote(fromUser);
+             await loadAndRenderUserData();
+           } catch (err) { console.warn('accept invite error', err); }
+         } else if (btn.classList.contains('decline-btn')) {
+           try {
+             await declineInviteRemote(fromUser);
+             await loadAndRenderUserData();
+           } catch (err) { console.warn('decline invite error', err); }
+         }
+       });
+     }
+   
+     // friends list remove friend
+     const frs = friendsList();
+     if (frs) {
+       frs.addEventListener('click', async (e) => {
+         const btn = e.target;
+         if (!btn || !btn.dataset) return;
+         if (btn.classList.contains('remove-friend-btn')) {
+           const friendToRemove = btn.dataset.user;
+           try {
+             const meRef = doc(db, 'users', currentUser);
+             const otherRef = doc(db, 'users', friendToRemove);
+             await updateDoc(meRef, { friends: arrayRemove(friendToRemove) });
+             await updateDoc(otherRef, { friends: arrayRemove(currentUser) });
+             await loadAndRenderUserData();
+           } catch (err) { console.warn('remove friend error', err); }
+         }
+       });
+     }
+   
+     // close modal buttons
+     const closeButtons = closeBtns();
+     if (closeButtons && closeButtons.length) {
+       closeButtons.forEach(btn => btn.addEventListener('click', () => { const modal = btn.closest('.modal'); if (modal) modal.style.display = 'none'; }));
+     }
+   
+     // click outside modal to close
+     window.addEventListener('click', (e) => { if (e.target && e.target.classList && e.target.classList.contains('modal')) e.target.style.display = 'none'; });
+   
+     // search input keyboard shortcut
+     document.addEventListener('keydown', (e) => {
+       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); if (searchInput()) searchInput().focus(); }
+     });
+   
+   }); // end DOMContentLoaded wiring
+   
+   /* ===========================
+      Auth state listener
+      =========================== */
+   onAuthStateChanged(auth, async (user) => {
+     if (user) {
+       const email = user.email || '';
+       const normalized = email.includes('@') ? email.split('@')[0] : normalizeUsername(email);
+       currentUser = normalized;
+       const udoc = await getUserDoc(currentUser);
+       currentUserDisplayName = (udoc && udoc.displayName) ? udoc.displayName : currentUser;
+       showAppUI();
+     } else {
+       currentUser = null;
+       currentUserDisplayName = '';
+       showAuthUI();
+     }
+   });
+   
+   /* ===========================
+      Robust background video + CSS slides
+      Replace any older video code with this block
+      =========================== */
+   
+   const videoSources = [
+     { title: 'Productive Workspace', url: './videos/task-background.mp4', fallbackCss: 'linear-gradient(-45deg,#111,#333)' },
+     { title: 'Just a video', url: './videos/background-1.mp4', fallbackCss: 'linear-gradient(-45deg,#222,#444)' },
+     { title: 'Tech Data Flow', url: './videos/background-2.mp4', fallbackCss: 'linear-gradient(-45deg,#0f172a,#0b3a5b)' },
+     { title: 'Abstract Particles', url: './videos/background-3.mp4', fallbackCss: 'linear-gradient(-45deg,#1f1c2c,#928dab)' },
+     { title: 'Calm Clouds', url: 'https://storage.coverr.co/videos/coverr-clouds-sky-5459/1080p.mp4', fallbackCss: 'linear-gradient(-45deg,#8EC5FC,#E0C3FC)' },
+     { title: 'Sunset Gradient', type: 'css', css: 'linear-gradient(-45deg,#f093fb,#f5576c,#4facfe,#00f2fe)' },
+     { title: 'Forest Mist', type: 'css', css: 'linear-gradient(-45deg,#8EC5FC,#E0C3FC,#8ED1FC,#C3F0CA)' }
+   ];
+   
+   let currentVideoIndex = 0;
+   let backgroundTimer = null;
+   
+   function clearBackgroundTimer() {
+     if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
+   }
+   
+   function setVideoSource(index) {
+     clearBackgroundTimer();
+     if (!Array.isArray(videoSources) || videoSources.length === 0) return;
+     currentVideoIndex = ((index % videoSources.length) + videoSources.length) % videoSources.length;
+     const source = videoSources[currentVideoIndex];
+   
+     // reset background and update title
+     try { document.body.style.background = ''; } catch (e) {}
+     const bgV = bgVideoEl();
+     const bgT = bgTitleEl();
+     if (bgT) bgT.textContent = source.title || '';
+   
+     // CSS-only slide
+     if (source.type === 'css' || !source.url) {
+       if (bgV) {
+         try { bgV.pause(); } catch (e) {}
+         bgV.style.display = 'none';
+         try { bgV.removeAttribute('src'); bgV.load(); } catch (e) {}
+       }
+       document.body.style.background = source.css || source.fallbackCss || 'linear-gradient(180deg,#111,#333)';
+       backgroundTimer = setTimeout(() => setVideoSource(currentVideoIndex + 1), 10000);
+       console.log('[bg] CSS background set:', source.title);
+       return;
+     }
+   
+     // Video slide
+     if (!bgV) return;
+     bgV.style.display = 'block';
+     bgV.muted = true;
+     bgV.playsInline = true;
+     bgV.loop = false;
+     try { bgV.pause(); } catch (e) {}
+   
+     bgV.src = source.url;
+     try { bgV.load(); } catch (e) {}
+   
+     const p = bgV.play();
+     if (p && typeof p.then === 'function') {
+       p.then(() => {
+         if (bgT) bgT.textContent = source.title || '';
+         console.log('[bg] Playing video:', source.url);
+       }).catch(err => {
+         console.warn('[bg] Video play() rejected:', err, 'url:', source.url);
+         bgV.style.display = 'none';
+         document.body.style.background = source.fallbackCss || 'linear-gradient(180deg,#111,#333)';
+         if (bgT) bgT.textContent = source.title || '';
+       });
+     } else {
+       if (bgT) bgT.textContent = source.title || '';
+     }
+   }
+   
+   // video element event wiring
+   (function wireVideoEvents() {
+     const bgV = bgVideoEl();
+     if (!bgV) return;
+     bgV.addEventListener('ended', () => setVideoSource(currentVideoIndex + 1));
+     bgV.addEventListener('error', (ev) => {
+       console.error('[bg] Video element error', ev, 'currentSrc:', bgV.currentSrc);
+       setVideoSource(currentVideoIndex + 1);
+     });
+     bgV.addEventListener('stalled', () => console.warn('[bg] Video stalled:', bgV.currentSrc));
+     bgV.addEventListener('loadedmetadata', () => {
+       const bgT = bgTitleEl();
+       if (bgT && videoSources[currentVideoIndex]) bgT.textContent = videoSources[currentVideoIndex].title || '';
+     });
+   })();
+   
+   const bgPrevBtnEl = bgPrevBtn();
+   const bgNextBtnEl = bgNextBtn();
+   if (bgPrevBtnEl) bgPrevBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex - 1); });
+   if (bgNextBtnEl) bgNextBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex + 1); });
+   
+   // start video after DOM ready (small delay helps)
+   document.addEventListener('DOMContentLoaded', () => {
+     setTimeout(() => setVideoSource(0), 50);
+   });
+   
+   // debugging helper
+   window.showCurrentBg = () => {
+     console.log('current index:', currentVideoIndex, 'source:', videoSources[currentVideoIndex]);
+   };
+   
