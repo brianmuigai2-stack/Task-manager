@@ -261,7 +261,7 @@
       UPDATED: Function to create a larger set of varied sample tasks for a new user
       =========================== */
    async function createSampleTasksForUser(uid, displayName) {
-     console.log(`Creating sample tasks for new user (uid=${uid}, name=${displayName})`);
+     console.log(`Creating sample tasks for user (uid=${uid}, name=${displayName})`);
      const tasksCollection = collection(db, 'tasks');
      const now = new Date();
      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -280,6 +280,25 @@
        console.log("Sample tasks created successfully.");
      } catch (error) {
        console.error("Error creating sample tasks:", error);
+     }
+   }
+   
+   /* ===========================
+      ADDED: Function to ensure user has sample tasks
+      =========================== */
+   async function ensureUserHasSampleTasks(uid, displayName) {
+     try {
+       const tasksCollection = collection(db, 'tasks');
+       const qOwned = query(tasksCollection, where('ownerId', '==', uid));
+       const snapshot = await getDocs(qOwned);
+       
+       // If user has no tasks, create sample tasks
+       if (snapshot.empty) {
+         console.log("User has no tasks, creating sample tasks...");
+         await createSampleTasksForUser(uid, displayName);
+       }
+     } catch (error) {
+       console.error("Error checking user tasks:", error);
      }
    }
    
@@ -576,6 +595,9 @@
            localCategories = ['General'];
          }
          renderCategories();
+   
+         // Ensure user has sample tasks
+         await ensureUserHasSampleTasks(currentUser, currentUserDisplayName);
    
          // render friend requests and friends (async)
          await renderFriendRequests(udoc.friendRequests || {});
@@ -1090,4 +1112,3 @@
        if (bgT && videoSources[currentVideoIndex]) bgT.textContent = videoSources[currentVideoIndex].title || '';
      });
    })();
-   
