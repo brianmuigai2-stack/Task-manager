@@ -17,7 +17,7 @@
    } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
    import {
      getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove, deleteField,
-     collection, addDoc, query, where, onSnapshot, orderBy, deleteDoc
+     collection, addDoc, query, where, onSnapshot, orderBy, deleteDoc, serverTimestamp
    } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
    
    /* ===========================
@@ -98,11 +98,14 @@
    /* ===========================
       App state
       =========================== */
-   let currentUser = null; // normalized username
+   let currentUser = null; // now: auth uid
    let currentUserDisplayName = '';
    let unsubscribeTasksListener = null;
    let localCategories = ['General']; // Will be loaded from Firestore
    let statsPieChart = null; // <-- Global variable for the chart instance
+   
+   // simple cache for uid -> displayName to avoid repeated reads
+   const displayNameCache = new Map();
    
    /* ===========================
       Utility: escape HTML
@@ -118,26 +121,65 @@
    }
    
    /* ===========================
-      Firestore: user helpers
+      Firestore: user helpers (UID-based)
       =========================== */
-   async function createUserFirestore(normalizedUsername, displayName) {
-     const userRef = doc(db, 'users', normalizedUsername);
+   async function createUserFirestore(uid, normalizedUsername, displayName) {
+     // create users/{uid} and usernames/{normalizedUsername} => { uid }
+     const userRef = doc(db, 'users', uid);
+     const usernameRef = doc(db, 'usernames', normalizedUsername);
      const snap = await getDoc(userRef);
      if (snap.exists()) return { ok: false, reason: 'exists' };
-     await setDoc(userRef, {
-       displayName: displayName || normalizedUsername,
-       createdAt: new Date(),
-       friends: [],
-       friendRequests: {},
-       categories: ['General'] // Initialize with default category
-     });
-     return { ok: true };
+     try {
+       await setDoc(userRef, {
+         username: normalizedUsername,
+         displayName: displayName || normalizedUsername,
+         createdAt: serverTimestamp(),
+         friends: [],              // store friends as array of uids
+         friendRequests: {},       // map of uid -> status
+         categories: ['General']
+       });
+       // create username mapping to uid for lookups
+       await setDoc(usernameRef, { uid });
+       return { ok: true };
+     } catch (err) {
+       console.error('createUserFirestore error', err);
+       return { ok: false, error: err };
+     }
    }
    
-   async function getUserDoc(normalizedUsername) {
-     const userRef = doc(db, 'users', normalizedUsername);
-     const snap = await getDoc(userRef);
-     return snap.exists() ? snap.data() : null;
+   async function getUserDoc(uid) {
+     if (!uid) return null;
+     try {
+       const userRef = doc(db, 'users', uid);
+       const snap = await getDoc(userRef);
+       return snap.exists() ? snap.data() : null;
+     } catch (err) {
+       console.error('getUserDoc error', err);
+       return null;
+     }
+   }
+   
+   async function getUidForUsername(normalizedUsername) {
+     if (!normalizedUsername) return null;
+     try {
+       const ref = doc(db, 'usernames', normalizedUsername);
+       const snap = await getDoc(ref);
+       if (!snap.exists()) return null;
+       const d = snap.data();
+       return d && d.uid ? d.uid : null;
+     } catch (err) {
+       console.error('getUidForUsername error', err);
+       return null;
+     }
+   }
+   
+   async function getDisplayNameForUid(uid) {
+     if (!uid) return uid;
+     if (displayNameCache.has(uid)) return displayNameCache.get(uid);
+     const udoc = await getUserDoc(uid);
+     const name = (udoc && (udoc.displayName || udoc.username)) ? (udoc.displayName || udoc.username) : uid;
+     displayNameCache.set(uid, name);
+     return name;
    }
    
    /* ===========================
@@ -151,6 +193,10 @@
    
      if (mainSelect) {
        mainSelect.innerHTML = ''; // Clear existing options
+       const emptyOpt = document.createElement('option');
+       emptyOpt.value = '';
+       emptyOpt.textContent = 'No Category';
+       mainSelect.appendChild(emptyOpt);
        localCategories.forEach(cat => {
          const option = document.createElement('option');
          option.value = cat;
@@ -161,6 +207,10 @@
    
      if (editSelect) {
        editSelect.innerHTML = ''; // Clear existing options
+       const emptyOpt = document.createElement('option');
+       emptyOpt.value = '';
+       emptyOpt.textContent = 'No Category';
+       editSelect.appendChild(emptyOpt);
        localCategories.forEach(cat => {
          const option = document.createElement('option');
          option.value = cat;
@@ -192,15 +242,15 @@
      // Add to local state and UI
      localCategories.push(displayCategory);
      renderCategories();
-     
-     // Save to Firestore
+   
+     // Save to Firestore (best-effort)
      try {
        const userRef = doc(db, 'users', currentUser);
        await updateDoc(userRef, { categories: localCategories });
        console.log('Category saved to Firestore.');
      } catch (error) {
        console.error('Error saving category:', error);
-       alert('Could not save the new category.');
+       // don't block user if save fails
      }
    
      // Clear the input field
@@ -210,58 +260,24 @@
    /* ===========================
       UPDATED: Function to create a larger set of varied sample tasks for a new user
       =========================== */
-   async function createSampleTasksForUser(username) {
-     console.log(`Creating a large set of varied sample tasks for new user: ${username}`);
+   async function createSampleTasksForUser(uid, displayName) {
+     console.log(`Creating sample tasks for new user (uid=${uid}, name=${displayName})`);
      const tasksCollection = collection(db, 'tasks');
      const now = new Date();
-     const today = now.toISOString().split('T')[0];
      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
      const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
      const inThreeDays = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
    
      const sampleTasks = [
-       // Work Tasks (5 tasks)
-       { ownerId: username, ownerName: username, text: "Review project proposal", notes: "Check for typos and budget clarity.", category: "Work", priority: "high", completed: false, createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Prepare slides for Monday's meeting", notes: "Focus on Q3 results.", dueDate: tomorrow, category: "Work", priority: "high", completed: false, createdAt: new Date(now.getTime() - 4 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Reply to client emails", notes: "Urgent inquiries from Johnson & Co.", category: "Work", priority: "medium", completed: true, createdAt: yesterday, completedAt: new Date(now.getTime() - 10 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Update team on project progress", notes: "Send a summary email.", category: "Work", priority: "low", completed: false, createdAt: new Date(now.getTime() - 30 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Code review for feature branch", notes: "Focus on security and performance.", category: "Work", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 6 * 60 * 60 * 1000) },
-   
-       // Personal Tasks (4 tasks)
-       { ownerId: username, ownerName: username, text: "Plan weekend trip to the mountains", notes: "Book a hotel and research hiking trails.", dueDate: nextWeek, category: "Personal", priority: "low", completed: false, createdAt: new Date(now.getTime() - 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Call Mom for her birthday", notes: "Don't forget!", dueDate: tomorrow, category: "Personal", priority: "high", completed: false, createdAt: now },
-       { ownerId: username, ownerName: username, text: "Read 30 pages of a book", notes: "Continue reading 'The Pragmatic Programmer'.", category: "Personal", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Buy a gift for Sarah's party", notes: "Check her wishlist online.", dueDate: inThreeDays, category: "Personal", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 7 * 60 * 60 * 1000) },
-   
-       // Health & Fitness Tasks (3 tasks)
-       { ownerId: username, ownerName: username, text: "Go for a 5km run", notes: "Morning run in the park.", category: "Health & Fitness", priority: "medium", completed: true, createdAt: yesterday, completedAt: new Date(now.getTime() - 14 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Schedule a dentist appointment", notes: "Annual checkup.", dueDate: inThreeDays, category: "Health & Fitness", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Meal prep for the week", notes: "Cook chicken, quinoa, and veggies.", category: "Health & Fitness", priority: "low", completed: false, createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000) },
-   
-       // Finance Tasks (3 tasks)
-       { ownerId: username, ownerName: username, text: "Pay monthly bills", notes: "Electricity, internet, and credit card.", dueDate: tomorrow, category: "Finance", priority: "high", completed: false, createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Review monthly budget", notes: "See where money was spent.", category: "Finance", priority: "low", completed: false, createdAt: new Date(now.getTime() - 12 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Set up automatic savings transfer", notes: "Transfer $100 to savings account each payday.", category: "Finance", priority: "medium", completed: false, createdAt: now },
-   
-       // Home & Errands Tasks (3 tasks)
-       { ownerId: username, ownerName: username, text: "Take out the trash and recycling", notes: "Bins go out Tuesday night.", dueDate: tomorrow, category: "Home & Errands", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 9 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Go to the post office", notes: "Mail the package for eBay sale.", category: "Home & Errands", priority: "low", completed: false, createdAt: new Date(now.getTime() - 11 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Fix the leaky kitchen faucet", notes: "Watch a tutorial first, then buy parts.", category: "Home & Errands", priority: "low", completed: false, createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000) },
-       
-       // Learning & Development Tasks (2 tasks)
-       { ownerId: username, ownerName: username, text: "Complete 'Advanced JavaScript' module", notes: "On the online learning platform.", category: "Learning & Development", priority: "medium", completed: false, createdAt: new Date(now.getTime() - 4 * 60 * 60 * 1000) },
-       { ownerId: username, ownerName: username, text: "Watch a tutorial on React Hooks", notes: "Focus on useEffect and useContext.", category: "Learning & Development", priority: "low", completed: false, createdAt: new Date(now.getTime() - 20 * 60 * 1000) },
-   
-       // Uncategorized Tasks (2 tasks)
-       { ownerId: username, ownerName: username, text: "A task without a category", notes: "This will appear as 'Uncategorized' in the stats.", priority: "low", completed: false, createdAt: now },
-       { ownerId: username, ownerName: username, text: "Research new desk chairs", notes: "My back is killing me.", priority: "low", completed: false, createdAt: new Date(now.getTime() - 15 * 60 * 1000) }
+       { ownerId: uid, ownerName: displayName || uid, text: "Review project proposal", notes: "Check for typos and budget clarity.", category: "Work", priority: "high", completed: false, createdAt: serverTimestamp() },
+       { ownerId: uid, ownerName: displayName || uid, text: "Prepare slides for Monday's meeting", notes: "Focus on Q3 results.", dueDate: tomorrow, category: "Work", priority: "high", completed: false, createdAt: serverTimestamp() },
+       { ownerId: uid, ownerName: displayName || uid, text: "Plan weekend trip to the mountains", notes: "Book a hotel and research hiking trails.", dueDate: nextWeek, category: "Personal", priority: "low", completed: false, createdAt: serverTimestamp() },
+       { ownerId: uid, ownerName: displayName || uid, text: "Pay monthly bills", notes: "Electricity, internet, and credit card.", dueDate: tomorrow, category: "Finance", priority: "high", completed: false, createdAt: serverTimestamp() }
      ];
    
      try {
-       // Use Promise.all to create all tasks concurrently
        await Promise.all(sampleTasks.map(taskData => addDoc(tasksCollection, taskData)));
-       console.log("A large set of varied sample tasks created successfully.");
+       console.log("Sample tasks created successfully.");
      } catch (error) {
        console.error("Error creating sample tasks:", error);
      }
@@ -276,23 +292,21 @@
        unsubscribeTasksListener = null;
      }
      const tl = taskList();
-     if (!tl) return;
+     if (!tl || !currentUser) return;
    
      const tasksCollection = collection(db, 'tasks');
-     // --- CRITICAL FIX: Reverted query to work with all existing documents ---
+     // Owned tasks (ownerId is uid now)
      const qOwned = query(tasksCollection, where('ownerId', '==', currentUser), orderBy('createdAt', 'desc'));
      const qShared = query(tasksCollection, where('sharedWith', 'array-contains', currentUser), orderBy('createdAt', 'desc'));
    
      const tasksMap = new Map();
    
      const unsub1 = onSnapshot(qOwned, (snap) => {
-       console.log(`[Listener] Owned tasks snapshot received. Size: ${snap.size}`);
        snap.forEach(d => tasksMap.set(d.id, { id: d.id, ...d.data() }));
        renderTasksFromMap(tasksMap);
      }, (err) => console.warn('Tasks owned listener error', err));
    
      const unsub2 = onSnapshot(qShared, (snap) => {
-       console.log(`[Listener] Shared tasks snapshot received. Size: ${snap.size}`);
        snap.forEach(d => tasksMap.set(d.id, { id: d.id, ...d.data() }));
        renderTasksFromMap(tasksMap);
      }, (err) => console.warn('Tasks shared listener error', err));
@@ -305,9 +319,6 @@
    
    // ENHANCED: Added logging to help debug missing tasks
    function renderTasksFromMap(tasksMap) {
-     console.log("Rendering tasks from map. Map size:", tasksMap.size);
-     console.log("Tasks in map:", Array.from(tasksMap.values()));
-   
      const tl = taskList();
      if (!tl) return;
      tl.innerHTML = '';
@@ -316,7 +327,6 @@
        const tb = b.createdAt ? (b.createdAt.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime()) : 0;
        return tb - ta;
      });
-     console.log("Sorted array to render:", arr);
      arr.forEach(task => {
        const li = createTaskElement(task);
        tl.appendChild(li);
@@ -334,7 +344,7 @@
      const dueDateStr = task.dueDate || '';
      li.innerHTML = `
        <div class="task-main-content">
-         <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''} ${!isOwner ? 'disabled' : ''}/>
+         <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''} ${!isOwner ? 'disabled' : ''} aria-label="Toggle task completion"/>
          <div class="task-content">
            <span class="task-text">${escapeHtml(task.text)}</span>
            ${task.notes ? `<div class="task-notes">${escapeHtml(task.notes)}</div>` : ''}
@@ -344,8 +354,8 @@
            <span class="task-priority">${escapeHtml(task.priority || '')}</span>
            ${task.category ? `<span class="task-category-tag">${escapeHtml(task.category)}</span>` : ''}
            ${dueDateStr ? `<span class="task-due-date">${escapeHtml(dueDateStr)}</span>` : ''}
-           ${isOwner ? `<button class="edit-task-btn" title="Edit Task"><i class="fas fa-edit"></i></button>` : ''}
-           ${isOwner ? `<button class="delete-btn" title="Delete Task">&times;</button>` : ''}
+           ${isOwner ? `<button class="edit-task-btn" title="Edit Task"><i class="fas fa-edit" aria-hidden="true"></i></button>` : ''}
+           ${isOwner ? `<button class="delete-btn" title="Delete Task" aria-label="Delete task">&times;</button>` : ''}
          </div>
        </div>
      `;
@@ -369,68 +379,102 @@
       =========================== */
    async function addTaskRemote({ text, notes, dueDate, category, priority, recurrence, isShared, sharedWith }) {
      if (!currentUser) throw new Error('not signed in');
-     const docRef = await addDoc(collection(db, 'tasks'), {
-       ownerId: currentUser,
-       ownerName: currentUserDisplayName || currentUser,
-       text: text || '',
-       notes: notes || '',
-       dueDate: dueDate || '',
-       category: category || '',
-       priority: priority || 'medium',
-       recurrence: recurrence || '',
-       isShared: Boolean(isShared),
-       sharedWith: sharedWith || [],
-       completed: false,
-       createdAt: new Date()
-     });
-     return { ok: true, id: docRef.id };
+     try {
+       const docRef = await addDoc(collection(db, 'tasks'), {
+         ownerId: currentUser,
+         ownerName: currentUserDisplayName || currentUser,
+         text: text || '',
+         notes: notes || '',
+         dueDate: dueDate || '',
+         category: category || '',
+         priority: priority || 'medium',
+         recurrence: recurrence || '',
+         isShared: Boolean(isShared),
+         sharedWith: sharedWith || [],
+         completed: false,
+         createdAt: serverTimestamp()
+       });
+       return { ok: true, id: docRef.id };
+     } catch (err) {
+       console.error('addTaskRemote error', err);
+       return { ok: false, error: err };
+     }
    }
    
    async function updateTaskRemote(id, updates) {
-     const tRef = doc(db, 'tasks', id);
-     await updateDoc(tRef, updates);
-     return { ok: true };
+     try {
+       const tRef = doc(db, 'tasks', id);
+       if ('completed' in updates && updates.completed) updates.completedAt = serverTimestamp();
+       await updateDoc(tRef, updates);
+       return { ok: true };
+     } catch (err) {
+       console.error('updateTaskRemote error', err);
+       return { ok: false, error: err };
+     }
    }
    
    async function deleteTaskRemote(id) {
-     // --- FIX: Use simple document deletion. No need for a 'deleted' field. ---
-     const tRef = doc(db, 'tasks', id);
-     await deleteDoc(tRef);
-     return { ok: true };
+     try {
+       const tRef = doc(db, 'tasks', id);
+       await deleteDoc(tRef);
+       return { ok: true };
+     } catch (err) {
+       console.error('deleteTaskRemote error', err);
+       return { ok: false, error: err };
+     }
    }
    
    /* ===========================
-      Friends / invites
+      Friends / invites (now username->uid mapping aware)
       =========================== */
    async function sendInviteRemote(recipientRaw) {
      const candidate = normalizeUsername(recipientRaw);
      if (!candidate) throw new Error('no recipient');
-     if (candidate === currentUser) return { ok: false, reason: 'self' };
-     const recipientRef = doc(db, 'users', candidate);
-     const snap = await getDoc(recipientRef);
-     if (!snap.exists()) return { ok: false, reason: 'notfound' };
-     await updateDoc(recipientRef, { [`friendRequests.${currentUser}`]: 'received' });
-     return { ok: true };
+     // lookup uid for username
+     const recipientUid = await getUidForUsername(candidate);
+     if (!recipientUid) return { ok: false, reason: 'notfound' };
+     if (recipientUid === currentUser) return { ok: false, reason: 'self' };
+   
+     try {
+       const recipientRef = doc(db, 'users', recipientUid);
+       // Use UID keys in friendRequests map
+       await updateDoc(recipientRef, { [`friendRequests.${currentUser}`]: 'received' });
+       return { ok: true };
+     } catch (err) {
+       console.error('sendInviteRemote error', err);
+       return { ok: false, error: err };
+     }
    }
    
-   async function acceptInviteRemote(fromUser) {
-     const meRef = doc(db, 'users', currentUser);
-     const senderRef = doc(db, 'users', fromUser);
-     await updateDoc(meRef, { friends: arrayUnion(fromUser), [`friendRequests.${fromUser}`]: deleteField() });
-     await updateDoc(senderRef, { friends: arrayUnion(currentUser) });
-     return { ok: true };
+   async function acceptInviteRemote(fromUid) {
+     try {
+       const meRef = doc(db, 'users', currentUser);
+       const senderRef = doc(db, 'users', fromUid);
+       // add each other by uid in friends arrays, remove request
+       await updateDoc(meRef, { friends: arrayUnion(fromUid), [`friendRequests.${fromUid}`]: deleteField() });
+       await updateDoc(senderRef, { friends: arrayUnion(currentUser) });
+       return { ok: true };
+     } catch (err) {
+       console.error('acceptInviteRemote error', err);
+       return { ok: false, error: err };
+     }
    }
    
-   async function declineInviteRemote(fromUser) {
-     const meRef = doc(db, 'users', currentUser);
-     await updateDoc(meRef, { [`friendRequests.${fromUser}`]: deleteField() });
-     return { ok: true };
+   async function declineInviteRemote(fromUid) {
+     try {
+       const meRef = doc(db, 'users', currentUser);
+       await updateDoc(meRef, { [`friendRequests.${fromUid}`]: deleteField() });
+       return { ok: true };
+     } catch (err) {
+       console.error('declineInviteRemote error', err);
+       return { ok: false, error: err };
+     }
    }
    
    /* ===========================
-      UI render helpers: friends
+      UI render helpers: friends (now asynchronous because UIDs are resolved)
       =========================== */
-   function renderFriendRequests(requestsMap) {
+   async function renderFriendRequests(requestsMap) {
      const el = friendRequestsList();
      if (!el) return;
      el.innerHTML = '';
@@ -439,33 +483,41 @@
        el.innerHTML = '<p>No pending requests.</p>';
        return;
      }
-     entries.forEach(([from, status]) => {
+   
+     // entries are [uid, status]
+     for (const [fromUid, status] of entries) {
        if (status === 'received') {
+         const display = await getDisplayNameForUid(fromUid);
          const item = document.createElement('div');
          item.className = 'request-item';
-         item.innerHTML = `<span>${escapeHtml(from)} wants to be your friend</span>
+         item.innerHTML = `<span>${escapeHtml(display)} wants to be your friend</span>
            <div class="request-buttons">
-             <button class="accept-btn" data-user="${escapeHtml(from)}">Accept</button>
-             <button class="decline-btn" data-user="${escapeHtml(from)}">Decline</button>
+             <button class="accept-btn" data-user="${escapeHtml(fromUid)}">Accept</button>
+             <button class="decline-btn" data-user="${escapeHtml(fromUid)}">Decline</button>
            </div>`;
          el.appendChild(item);
        }
-     });
+     }
    }
    
-   function renderFriendsListUI(friendsArr) {
+   async function renderFriendsListUI(friendsArr) {
      const el = friendsList();
      if (!el) return;
      el.innerHTML = '';
      if (!Array.isArray(friendsArr) || friendsArr.length === 0) {
        el.innerHTML = '<p>No friends yet. Invite someone!</p>';
+       renderFriendCheckboxesUI([]);
        return;
      }
-     friendsArr.forEach(f => {
-       const item = document.createElement('div'); item.className = 'friend-item';
-       item.innerHTML = `<span>${escapeHtml(f)}</span> <button class="remove-friend-btn" data-user="${escapeHtml(f)}">Remove</button>`;
+   
+     // friendsArr is array of uids — resolve each to display name
+     for (const uid of friendsArr) {
+       const name = await getDisplayNameForUid(uid);
+       const item = document.createElement('div');
+       item.className = 'friend-item';
+       item.innerHTML = `<span>${escapeHtml(name)}</span> <button class="remove-friend-btn" data-user="${escapeHtml(uid)}">Remove</button>`;
        el.appendChild(item);
-     });
+     }
      renderFriendCheckboxesUI(friendsArr);
    }
    
@@ -479,13 +531,14 @@
      }
      friendsArr.forEach(f => {
        const label = document.createElement('label');
-       label.innerHTML = `<input type="checkbox" name="share-friend" value="${escapeHtml(f)}"> ${escapeHtml(f)}`;
+       // value is uid
+       label.innerHTML = `<input type="checkbox" name="share-friend" value="${escapeHtml(f)}"> ${escapeHtml(displayNameCache.get(f) || f)}`;
        c.appendChild(label);
      });
    }
    
    /* ===========================
-      Auth UI flows + helpers
+      Auth UI flows + helpers (signup changed to use uid)
       =========================== */
    function showAppUI() {
      const authM = authModal();
@@ -495,6 +548,7 @@
      if (appC) appC.style.display = 'flex';
      if (display) display.textContent = currentUserDisplayName || currentUser || '';
      startTasksListener();
+     // load user data (await in caller)
      loadAndRenderUserData();
    }
    
@@ -507,29 +561,30 @@
      }
    }
    
-   // --- CRITICAL FIX: Simplified this function. It now ONLY loads data. ---
+   // Loads user document and renders categories/friends
    async function loadAndRenderUserData() {
      if (!currentUser) return;
-     const udoc = await getUserDoc(currentUser);
-     if (udoc) {
-       currentUserDisplayName = udoc.displayName || currentUser;
-       
-       // Load custom categories from Firestore
-       if (udoc.categories && Array.isArray(udoc.categories)) {
-         const mergedCategories = ['General', ...udoc.categories.filter(cat => cat !== 'General')];
-         localCategories = [...new Set(mergedCategories)];
-       } else {
-         localCategories = ['General'];
-       }
-       renderCategories();
+     try {
+       const udoc = await getUserDoc(currentUser);
+       if (udoc) {
+         currentUserDisplayName = udoc.displayName || udoc.username || currentUser;
    
-       renderFriendRequests(udoc.friendRequests || {});
-       renderFriendsListUI(udoc.friends || []);
-     } else {
-       // This should not happen for a user who just signed up correctly.
-       // If it does, it means there's a bigger issue.
-       console.error("CRITICAL: User document not found for logged-in user. Data cannot be loaded.");
-       alert("There was a problem loading your profile. Please try signing out and back in.");
+         if (udoc.categories && Array.isArray(udoc.categories)) {
+           const mergedCategories = ['General', ...udoc.categories.filter(cat => cat !== 'General')];
+           localCategories = [...new Set(mergedCategories)];
+         } else {
+           localCategories = ['General'];
+         }
+         renderCategories();
+   
+         // render friend requests and friends (async)
+         await renderFriendRequests(udoc.friendRequests || {});
+         await renderFriendsListUI(udoc.friends || []);
+       } else {
+         console.error("User document not found:", currentUser);
+       }
+     } catch (err) {
+       console.error('loadAndRenderUserData error', err);
      }
    }
    
@@ -542,33 +597,25 @@
        return;
      }
    
-     console.log("Calculating stats for user:", currentUser);
      const tasksCollection = collection(db, 'tasks');
-     // --- CRITICAL FIX: Reverted query to work with all existing documents ---
      const qOwned = query(tasksCollection, where('ownerId', '==', currentUser), orderBy('createdAt', 'desc'));
      const qShared = query(tasksCollection, where('sharedWith', 'array-contains', currentUser), orderBy('createdAt', 'desc'));
    
      const categoryCounts = {};
-     let totalTasks = 0;
-   
      try {
        const ownedSnapshot = await getDocs(qOwned);
-       ownedSnapshot.forEach(doc => {
-         const task = doc.data();
-         totalTasks++;
+       ownedSnapshot.forEach(d => {
+         const task = d.data();
          const category = task.category || 'Uncategorized';
          categoryCounts[category] = (categoryCounts[category] || 0) + 1;
        });
    
        const sharedSnapshot = await getDocs(qShared);
-       sharedSnapshot.forEach(doc => {
-         const task = doc.data();
-         totalTasks++;
+       sharedSnapshot.forEach(d => {
+         const task = d.data();
          const category = task.category || 'Uncategorized';
          categoryCounts[category] = (categoryCounts[category] || 0) + 1;
        });
-   
-       console.log("Category counts for stats:", categoryCounts);
    
        const labels = Object.keys(categoryCounts);
        const data = Object.values(categoryCounts);
@@ -579,7 +626,9 @@
          'rgba(255, 99, 255, 0.7)', 'rgba(99, 255, 132, 0.7)',
        ];
    
-       const ctx = document.getElementById('stats-pie-chart').getContext('2d');
+       const canvas = document.getElementById('stats-pie-chart');
+       if (!canvas) return;
+       const ctx = canvas.getContext('2d');
        if (statsPieChart) statsPieChart.destroy();
    
        statsPieChart = new Chart(ctx, {
@@ -610,12 +659,19 @@
      }
    }
    
+   /* ===========================
+      Utilities: debounce
+      =========================== */
+   function debounce(fn, ms = 250) {
+     let t;
+     return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+   }
    
    /* ===========================
-      Event wiring (DOMContentLoaded)
+      Event wiring (DOMContentLoaded) - consolidated
       =========================== */
    document.addEventListener('DOMContentLoaded', () => {
-     // Auth form (signup/signin)
+     // Register UI handlers
      const authFormEl = authForm();
      if (authFormEl) {
        authFormEl.addEventListener('submit', async (e) => {
@@ -644,17 +700,22 @@
                }
              }
    
-             // 1. Create the user in Firebase Auth
-             await createUserWithEmailAndPassword(auth, syntheticEmail, password);
-             
-             // 2. Create the user's document in Firestore
-             await createUserFirestore(normalized, usernameRaw);
+             // 1. Create the user in Firebase Auth and get uid
+             const userCredential = await createUserWithEmailAndPassword(auth, syntheticEmail, password);
+             const uid = userCredential.user.uid;
    
-             // 3. Create the sample tasks and wait for them to finish
-             // --- CRITICAL FIX: Moved here to prevent race condition ---
-             await createSampleTasksForUser(normalized);
+             // 2. Create the user's document in Firestore under users/{uid} and usernames/{normalized}
+             const created = await createUserFirestore(uid, normalized, usernameRaw);
+             if (!created.ok) {
+               console.error('Failed to create user doc', created);
+               alert('Signup failed while creating profile.');
+               return;
+             }
    
-             // onAuthStateChanged will now handle showing the UI
+             // 3. Create the sample tasks (moved here to avoid race conditions)
+             await createSampleTasksForUser(uid, usernameRaw);
+   
+             // onAuthStateChanged will handle showing the UI
              console.log("Signup successful. Awaiting onAuthStateChanged trigger.");
    
            } catch (err) {
@@ -724,7 +785,8 @@
            sharedWith = Array.from(boxes).map(b => b.value);
          }
          try {
-           await addTaskRemote({ text, notes, dueDate, category, priority, isShared, sharedWith });
+           const res = await addTaskRemote({ text, notes, dueDate, category, priority, isShared, sharedWith });
+           if (!res.ok) throw res.error || new Error('Add failed');
            if (taskFormEl) taskFormEl.reset();
            if (friendSelectContainer()) friendSelectContainer().style.display = 'none';
          } catch (err) { console.error('add task error', err); alert('Add task failed'); }
@@ -748,9 +810,10 @@
          if (t.classList.contains('task-checkbox')) {
            const checkbox = t;
            try {
-             await updateTaskRemote(id, { completed: checkbox.checked, completedAt: checkbox.checked ? new Date() : null });
+             await updateTaskRemote(id, { completed: checkbox.checked });
            } catch (err) { console.warn('toggle error', err); }
          } else if (t.classList.contains('delete-btn')) {
+           if (!confirm('Delete this task?')) return;
            try {
              await deleteTaskRemote(id);
            } catch (err) { console.warn('delete error', err); }
@@ -767,6 +830,11 @@
              if (document.getElementById('edit-task-priority')) document.getElementById('edit-task-priority').value = task.priority || 'medium';
              if (document.getElementById('edit-task-id')) document.getElementById('edit-task-id').value = id;
              if (taskModal()) taskModal().style.display = 'flex';
+             // focus the first input in the modal for accessibility
+             setTimeout(() => {
+               const first = document.getElementById('edit-task-text');
+               if (first) first.focus();
+             }, 50);
            } catch (err) { console.warn('edit open error', err); }
          }
        });
@@ -786,9 +854,12 @@
            priority: (document.getElementById('edit-task-priority') || {}).value || 'medium'
          };
          try {
-           if (id) await updateTaskRemote(String(id), updated);
+           if (id) {
+             const res = await updateTaskRemote(String(id), updated);
+             if (!res.ok) throw res.error || new Error('Update failed');
+           }
            if (taskModal()) taskModal().style.display = 'none';
-         } catch (err) { console.warn('update task error', err); }
+         } catch (err) { console.warn('update task error', err); alert('Update failed'); }
        });
      }
    
@@ -826,13 +897,13 @@
        frList.addEventListener('click', async (e) => {
          const btn = e.target;
          if (!btn || !btn.dataset) return;
-         const fromUser = btn.dataset.user;
-         if (!fromUser) return;
+         const fromUid = btn.dataset.user;
+         if (!fromUid) return;
          if (btn.classList.contains('accept-btn')) {
-           try { await acceptInviteRemote(fromUser); await loadAndRenderUserData(); }
+           try { await acceptInviteRemote(fromUid); await loadAndRenderUserData(); }
            catch (err) { console.warn('accept invite error', err); }
          } else if (btn.classList.contains('decline-btn')) {
-           try { await declineInviteRemote(fromUser); await loadAndRenderUserData(); }
+           try { await declineInviteRemote(fromUid); await loadAndRenderUserData(); }
            catch (err) { console.warn('decline invite error', err); }
          }
        });
@@ -845,7 +916,7 @@
          const btn = e.target;
          if (!btn || !btn.dataset) return;
          if (btn.classList.contains('remove-friend-btn')) {
-           const friendToRemove = btn.dataset.user;
+           const friendToRemove = btn.dataset.user; // this is uid
            try {
              const meRef = doc(db, 'users', currentUser);
              const otherRef = doc(db, 'users', friendToRemove);
@@ -866,12 +937,32 @@
      // click outside modal to close
      window.addEventListener('click', (e) => { if (e.target && e.target.classList && e.target.classList.contains('modal')) e.target.style.display = 'none'; });
    
-     // search input keyboard shortcut
+     // escape to close modals
      document.addEventListener('keydown', (e) => {
+       if (e.key === 'Escape') {
+         const openModals = document.querySelectorAll('.modal[style*="display: block"], .modal[style*="display: flex"]');
+         openModals.forEach(m => m.style.display = 'none');
+       }
+       // search shortcut
        if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); if (searchInput()) searchInput().focus(); }
      });
    
-     // Stats button event listener (UPDATED to be async)
+     // search input debounced handler (filtering is client-side in this build)
+     const sInput = searchInput();
+     if (sInput) {
+       const doFilter = debounce(() => {
+         const q = (sInput.value || '').toLowerCase().trim();
+         document.querySelectorAll('#task-list .task-item').forEach(li => {
+           const txt = (li.querySelector('.task-text') || {}).textContent || '';
+           const notes = (li.querySelector('.task-notes') || {}).textContent || '';
+           const matches = txt.toLowerCase().includes(q) || notes.toLowerCase().includes(q);
+           li.style.display = matches ? '' : 'none';
+         });
+       }, 200);
+       sInput.addEventListener('input', doFilter);
+     }
+   
+     // Stats button event listener (async)
      const statsBtnEl = statsBtn();
      if (statsBtnEl) {
        statsBtnEl.addEventListener('click', async () => {
@@ -879,19 +970,35 @@
        });
      }
    
-   }); // end DOMContentLoaded wiring
+     // Video background controls & initialization
+     const bgPrevBtnEl = bgPrevBtn();
+     const bgNextBtnEl = bgNextBtn();
+     if (bgPrevBtnEl) bgPrevBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex - 1); });
+     if (bgNextBtnEl) bgNextBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex + 1); });
+   
+     // Initialize video on ready (small delay so DOM is fully painted)
+     setTimeout(() => {
+       try { setVideoSource(0); } catch (err) { console.warn('setVideoSource init error', err); }
+     }, 50);
+   }); // end DOMContentLoaded
    
    /* ===========================
-      Auth state listener
+      Auth state listener (currentUser is uid)
       =========================== */
    onAuthStateChanged(auth, async (user) => {
      if (user) {
-       const email = user.email || '';
-       const normalized = email.includes('@') ? email.split('@')[0] : normalizeUsername(email);
-       currentUser = normalized;
-       const udoc = await getUserDoc(currentUser);
-       currentUserDisplayName = (udoc && udoc.displayName) ? udoc.displayName : currentUser;
-       showAppUI();
+       const uid = user.uid;
+       currentUser = uid;
+       try {
+         const udoc = await getUserDoc(currentUser);
+         currentUserDisplayName = (udoc && udoc.displayName) ? udoc.displayName : (udoc && udoc.username) ? udoc.username : currentUser;
+         // cache display name
+         displayNameCache.set(currentUser, currentUserDisplayName);
+         showAppUI();
+       } catch (err) {
+         console.error('onAuthStateChanged load user error', err);
+         showAuthUI();
+       }
      } else {
        currentUser = null;
        currentUserDisplayName = '';
@@ -922,7 +1029,7 @@
    function setVideoSource(index) {
      clearBackgroundTimer();
      if (!Array.isArray(videoSources) || videoSources.length === 0) return;
-     currentVideoIndex = ((index % videoSources.length + videoSources.length) % videoSources.length) % videoSources.length;
+     currentVideoIndex = ((index % videoSources.length + videoSources.length) % videoSources.length);
      const source = videoSources[currentVideoIndex];
    
      try { document.body.style.background = ''; } catch (e) {}
@@ -938,7 +1045,6 @@
        }
        document.body.style.background = source.css || source.fallbackCss || 'linear-gradient(180deg,#111,#333)';
        backgroundTimer = setTimeout(() => setVideoSource(currentVideoIndex + 1), 10000);
-       console.log('[bg] CSS background set:', source.title);
        return;
      }
    
@@ -949,6 +1055,7 @@
      bgV.loop = false;
      try { bgV.pause(); } catch (e) {}
    
+     // Use source.url; ensure it exists
      bgV.src = source.url;
      try { bgV.load(); } catch (e) {}
    
@@ -956,12 +1063,13 @@
      if (p && typeof p.then === 'function') {
        p.then(() => {
          if (bgT) bgT.textContent = source.title || '';
-         console.log('[bg] Playing video:', source.url);
        }).catch(err => {
          console.warn('[bg] Video play() rejected:', err, 'url:', source.url);
          bgV.style.display = 'none';
          document.body.style.background = source.fallbackCss || 'linear-gradient(180deg,#111,#333)';
          if (bgT) bgT.textContent = source.title || '';
+         // Advance after failure
+         backgroundTimer = setTimeout(() => setVideoSource(currentVideoIndex + 1), 2000);
        });
      } else {
        if (bgT) bgT.textContent = source.title || '';
@@ -983,15 +1091,3 @@
      });
    })();
    
-   const bgPrevBtnEl = bgPrevBtn();
-   const bgNextBtnEl = bgNextBtn();
-   if (bgPrevBtnEl) bgPrevBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex - 1); });
-   if (bgNextBtnEl) bgNextBtnEl.addEventListener('click', (e) => { e.preventDefault(); setVideoSource(currentVideoIndex + 1); });
-   
-   document.addEventListener('DOMContentLoaded', () => {
-     setTimeout(() => setVideoSource(0), 50);
-   });
-   
-   window.showCurrentBg = () => {
-     console.log('current index:', currentVideoIndex, 'source:', videoSources[currentVideoIndex]);
-   };

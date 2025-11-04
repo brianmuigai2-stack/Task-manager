@@ -1,201 +1,235 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Task Manager</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- Add this line to your HTML <head> or before your closing </body> tag -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="manifest" href="manifest.json">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ultimate Task Manager</title>
+  <meta name="description" content="A feature-rich, offline-capable task management application." />
+  <meta name="theme-color" content="#4a90e2" />
+
+  <!-- Styles & fonts -->
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- Icons & manifest (PWA) -->
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <!-- Maskable icon hint for Android -->
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <!-- Third-party CSS (icons) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <!-- Chart.js (only included once) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
 </head>
 <body>
+  <!-- VIDEO BACKGROUND -->
+  <div class="video-background" aria-hidden="true">
+    <!-- If you host video files, add a <source> tag with src attributes. Keep muted & playsinline for mobile. -->
+    <video id="bg-video" autoplay muted playsinline loop preload="metadata"></video>
+  </div>
+  <div class="video-overlay" aria-hidden="true"></div>
 
-    <!-- VIDEO BACKGROUND -->
-    <div class="video-background">
-        <video id="bg-video" autoplay muted playsinline></video>
-    </div>
-    <div class="video-overlay"></div>
+  <!-- VIDEO BACKGROUND CONTROLS -->
+  <div class="bg-controls" role="toolbar" aria-label="Background controls">
+    <button id="bg-prev-btn" aria-label="Previous background"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+    <span id="bg-title" aria-live="polite">Abstract</span>
+    <button id="bg-next-btn" aria-label="Next background"><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
+  </div>
 
-    <!-- VIDEO BACKGROUND CONTROLS -->
-    <div class="bg-controls">
-        <button id="bg-prev-btn"><i class="fas fa-chevron-left"></i></button>
-        <span id="bg-title">Abstract</span>
-        <button id="bg-next-btn"><i class="fas fa-chevron-right"></i></button>
-    </div>
-
-    <!-- SIGN IN / SIGN UP MODAL -->
-    <div id="auth-modal" class="modal">
-        <div class="modal-content auth-content">
-            <h1 id="auth-title">Sign In</h1>
-            <form id="auth-form">
-                <div class="form-group">
-                    <label for="auth-username">Username</label>
-                    <input type="text" id="auth-username" required>
-                </div>
-                <div class="form-group">
-                    <label for="auth-password">Password</label>
-                    <input type="password" id="auth-password" required>
-                </div>
-                <button type="submit" class="btn btn-primary" id="auth-submit-btn">Sign In</button>
-                <p class="auth-switch">
-                    Don't have an account? <a href="#" id="show-signup">Sign Up</a>
-                </p>
-            </form>
+  <!-- SIGN IN / SIGN UP MODAL -->
+  <div id="auth-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" hidden>
+    <div class="modal-content auth-content">
+      <h1 id="auth-title">Sign In</h1>
+      <form id="auth-form" autocomplete="on">
+        <div class="form-group">
+          <label for="auth-username">Username</label>
+          <input type="text" id="auth-username" name="username" required />
         </div>
-    </div>
-
-    <!-- MAIN APPLICATION (Hidden by default) -->
-    <div id="app" class="container" style="display: none;">
-        <header>
-            <div>
-                <h1>My Tasks</h1>
-                <p class="welcome-user">Welcome, <span id="current-user-display"></span></p>
-            </div>
-            <div class="header-controls">
-                <!-- NEW: Friends Button -->
-                <button id="friends-btn" class="btn btn-secondary"><i class="fas fa-users"></i> Friends</button>
-                <button id="stats-btn" class="btn btn-secondary"><i class="fas fa-chart-bar"></i> Stats</button>
-                <button id="export-btn" class="btn btn-secondary"><i class="fas fa-download"></i> Export</button>
-                <button id="sign-out-btn" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
-            </div>
-        </header>
-
-        <main>
-            <div class="search-bar">
-                <i class="fas fa-search"></i>
-                <input type="text" id="search-input" placeholder="Search tasks...">
-            </div>
-
-            <div class="category-manager">
-                <input type="text" id="category-input" placeholder="New category (e.g., Work, Personal)">
-                <button id="add-category-btn">Add Category</button>
-            </div>
-            <div id="category-list" class="category-list"></div>
-
-            <form id="task-form">
-                <input type="text" id="task-input" placeholder="What needs to be done?" required>
-                <textarea id="task-notes" placeholder="Add notes..."></textarea>
-                <div class="form-row">
-                    <input type="date" id="task-date">
-                    <select id="task-category">
-                        <option value="">No Category</option>
-                    </select>
-                    <select id="task-priority">
-                        <option value="low">Low Priority</option>
-                        <option value="medium" selected>Medium Priority</option>
-                        <option value="high">High Priority</option>
-                    </select>
-                </div>
-                <div class="form-row">
-                    <select id="task-recurrence">
-                        <option value="">Does Not Repeat</option>
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                    </select>
-                    <button type="submit">Add Task</button>
-                </div>
-            </form>
-
-            <div class="filter-controls">
-                <div class="filter-buttons">
-                    <button class="filter-btn active" data-filter="all">All</button>
-                    <button class="filter-btn" data-filter="active">Active</button>
-                    <button class="filter-btn" data-filter="completed">Completed</button>
-                </div>
-                <div class="category-filter-buttons" id="category-filter-buttons"></div>
-            </div>
-
-            <ul id="task-list"></ul>
-        </main>
-
-        <footer>
-            <p id="task-count">0 tasks left</p>
-            <p class="keyboard-shortcuts-hint">Press <kbd>Ctrl+K</kbd> to focus search</p>
-        </footer>
-    </div>
-
-    <!-- NEW: FRIENDS MODAL -->
-    <div id="friends-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h2>Friends</h2>
-            <div class="friends-section">
-                <h3>Invite a Friend</h3>
-                <form id="invite-form">
-                    <input type="text" id="invite-username" placeholder="Enter username to invite" required>
-                    <button type="submit" class="btn btn-primary">Send Invite</button>
-                </form>
-            </div>
-            <div class="friends-section">
-                <h3>Friend Requests</h3>
-                <div id="friend-requests-list"></div>
-            </div>
-            <div class="friends-section">
-                <h3>Your Friends</h3>
-                <div id="friends-list"></div>
-            </div>
+        <div class="form-group">
+          <label for="auth-password">Password</label>
+          <input type="password" id="auth-password" name="password" required />
         </div>
+        <button type="submit" class="btn btn-primary" id="auth-submit-btn">Sign In</button>
+        <p class="auth-switch">
+          Don't have an account? <a href="#" id="show-signup">Sign Up</a>
+        </p>
+      </form>
     </div>
+  </div>
 
-    <!-- UPDATED: TASK MODAL (Now includes sharing options) -->
-    <div id="task-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h2 id="task-modal-title">Add Task</h2>
-            <form id="edit-task-form">
-                <input type="hidden" id="edit-task-id">
-                <label for="edit-task-text">Task</label>
-                <input type="text" id="edit-task-text" required>
-                <label for="edit-task-notes">Notes</label>
-                <textarea id="edit-task-notes"></textarea>
-                <label for="edit-task-date">Due Date</label>
-                <input type="date" id="edit-task-date">
-                <label for="edit-task-category">Category</label>
-                <select id="edit-task-category"></select>
-                <label for="edit-task-priority">Priority</label>
-                <select id="edit-task-priority">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                </select>
-                
-                <!-- NEW: TASK SHARING OPTIONS -->
-                <div class="task-sharing-options">
-                    <label>
-                        <input type="checkbox" id="is-shared-task">
-                        Share this task with friends
-                    </label>
-                    <div id="friend-select-container" style="display: none;">
-                        <label>Select Friends:</label>
-                        <div id="friend-checkboxes"></div>
-                    </div>
-                </div>
+  <!-- MAIN APPLICATION (Hidden by default) -->
+  <div id="app" class="container" style="display: none;">
+    <header>
+      <div>
+        <h1>My Tasks</h1>
+        <p class="welcome-user">Welcome, <span id="current-user-display"></span></p>
+      </div>
+      <div class="header-controls" role="navigation" aria-label="Header actions">
+        <button id="friends-btn" class="btn btn-secondary" title="Friends"><i class="fas fa-users" aria-hidden="true"></i> <span class="sr-only">Friends</span></button>
+        <button id="stats-btn" class="btn btn-secondary" title="Stats"><i class="fas fa-chart-bar" aria-hidden="true"></i> <span class="sr-only">Stats</span></button>
+        <button id="export-btn" class="btn btn-secondary" title="Export"><i class="fas fa-download" aria-hidden="true"></i> <span class="sr-only">Export</span></button>
+        <button id="sign-out-btn" class="btn btn-danger" title="Sign out"><i class="fas fa-sign-out-alt" aria-hidden="true"></i> <span class="sr-only">Sign out</span></button>
+      </div>
+    </header>
 
-                <button type="submit" class="btn btn-primary">Save Task</button>
-            </form>
+    <main>
+      <div class="search-bar" role="search" aria-label="Search tasks">
+        <i class="fas fa-search" aria-hidden="true"></i>
+        <input type="text" id="search-input" placeholder="Search tasks..." aria-label="Search tasks" />
+      </div>
+
+      <div class="category-manager">
+        <input type="text" id="category-input" placeholder="New category (e.g., Work, Personal)" aria-label="New category" />
+        <button id="add-category-btn">Add Category</button>
+      </div>
+      <div id="category-list" class="category-list" aria-live="polite"></div>
+
+      <form id="task-form" aria-label="Add task">
+        <input type="text" id="task-input" name="task" placeholder="What needs to be done?" required />
+        <textarea id="task-notes" name="notes" placeholder="Add notes..."></textarea>
+        <div class="form-row">
+          <input type="date" id="task-date" name="dueDate" aria-label="Due date" />
+          <select id="task-category" name="category" aria-label="Category">
+            <option value="">No Category</option>
+          </select>
+          <select id="task-priority" name="priority" aria-label="Priority">
+            <option value="low">Low Priority</option>
+            <option value="medium" selected>Medium Priority</option>
+            <option value="high">High Priority</option>
+          </select>
         </div>
-    </div>
-
-    <!-- UPDATED: DASHBOARD MODAL for Pie Chart Stats -->
-    <div id="dashboard-modal" class="modal">
-        <div class="modal-content dashboard-content">
-            <span class="close-btn">&times;</span>
-            <h2>Task Statistics</h2>
-            <div class="chart-container" style="position: relative; height:40vh; width:80vw">
-                <canvas id="stats-pie-chart"></canvas>
-            </div>
+        <div class="form-row">
+          <select id="task-recurrence" name="recurrence" aria-label="Recurrence">
+            <option value="">Does Not Repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <button type="submit">Add Task</button>
         </div>
+      </form>
+
+      <div class="filter-controls" role="region" aria-label="Filter tasks">
+        <div class="filter-buttons" role="tablist" aria-label="Task filters">
+          <button class="filter-btn active" data-filter="all" role="tab">All</button>
+          <button class="filter-btn" data-filter="active" role="tab">Active</button>
+          <button class="filter-btn" data-filter="completed" role="tab">Completed</button>
+        </div>
+        <div class="category-filter-buttons" id="category-filter-buttons" aria-hidden="false"></div>
+      </div>
+
+      <ul id="task-list" role="list" aria-live="polite"></ul>
+    </main>
+
+    <footer>
+      <p id="task-count">0 tasks left</p>
+      <p class="keyboard-shortcuts-hint">Press <kbd>Ctrl+K</kbd> to focus search</p>
+    </footer>
+  </div>
+
+  <!-- FRIENDS MODAL -->
+  <div id="friends-modal" class="modal" role="dialog" aria-modal="true" hidden>
+    <div class="modal-content">
+      <button class="close-btn" aria-label="Close">&times;</button>
+      <h2>Friends</h2>
+      <div class="friends-section">
+        <h3>Invite a Friend</h3>
+        <form id="invite-form">
+          <input type="text" id="invite-username" placeholder="Enter username to invite" required />
+          <button type="submit" class="btn btn-primary">Send Invite</button>
+        </form>
+      </div>
+      <div class="friends-section">
+        <h3>Friend Requests</h3>
+        <div id="friend-requests-list" aria-live="polite"></div>
+      </div>
+      <div class="friends-section">
+        <h3>Your Friends</h3>
+        <div id="friends-list" aria-live="polite"></div>
+      </div>
     </div>
+  </div>
 
-    <!-- UPDATED SCRIPT TAG -->
-    <script type="module" src="script.js?v=4"></script>
+  <!-- TASK MODAL (Now includes sharing options) -->
+  <div id="task-modal" class="modal" role="dialog" aria-modal="true" hidden>
+    <div class="modal-content">
+      <button class="close-btn" aria-label="Close">&times;</button>
+      <h2 id="task-modal-title">Add Task</h2>
+      <form id="edit-task-form">
+        <input type="hidden" id="edit-task-id" />
+        <label for="edit-task-text">Task</label>
+        <input type="text" id="edit-task-text" required />
+        <label for="edit-task-notes">Notes</label>
+        <textarea id="edit-task-notes"></textarea>
+        <label for="edit-task-date">Due Date</label>
+        <input type="date" id="edit-task-date" />
+        <label for="edit-task-category">Category</label>
+        <select id="edit-task-category"></select>
+        <label for="edit-task-priority">Priority</label>
+        <select id="edit-task-priority">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
 
+        <!-- TASK SHARING OPTIONS -->
+        <div class="task-sharing-options">
+          <label>
+            <input type="checkbox" id="is-shared-task" />
+            Share this task with friends
+          </label>
+          <div id="friend-select-container" style="display: none;">
+            <label>Select Friends:</label>
+            <div id="friend-checkboxes"></div>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Save Task</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- DASHBOARD MODAL for Pie Chart Stats -->
+  <div id="dashboard-modal" class="modal" role="dialog" aria-modal="true" hidden>
+    <div class="modal-content dashboard-content">
+      <button class="close-btn" aria-label="Close">&times;</button>
+      <h2>Task Statistics</h2>
+      <div class="chart-container" style="position: relative; height:40vh; width:80vw">
+        <canvas id="stats-pie-chart" aria-label="Task statistics chart" role="img"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main module script (cache-busting query param optional) -->
+  <script type="module" src="script.js?v=4"></script>
+
+  <!-- Service Worker registration (falls back quietly if SW already registered in script.js) -->
+  <script>
+    (function registerSW() {
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          // Avoid double-registering if the app's module already registers SW
+          if (!navigator.serviceWorker.controller) {
+            navigator.serviceWorker.register('/sw.js')
+              .then(reg => console.log('Service Worker registered:', reg.scope))
+              .catch(err => console.warn('SW registration failed:', err));
+          } else {
+            console.log('Service Worker already active.');
+          }
+        });
+      }
+    })();
+  </script>
+
+  <!-- Optional: small noscript message for non-JS users -->
+  <noscript>
+    <div class="no-js-banner">This app requires JavaScript to run. Please enable JavaScript in your browser.</div>
+  </noscript>
 </body>
 </html>
+ 
