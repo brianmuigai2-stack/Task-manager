@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc, addDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { addNotification } from '../services/localSocial';
 
 const FriendsModal = ({ isOpen, onClose, user, userDoc, onViewProfile }) => {
   const [inviteUsername, setInviteUsername] = useState('');
@@ -72,19 +73,18 @@ const FriendsModal = ({ isOpen, onClose, user, userDoc, onViewProfile }) => {
         [`friendRequests.${user.uid}`]: 'pending'
       });
       
-      // Create notification
-      await addDoc(collection(db, 'notifications'), {
-        userId: targetUid,
-        type: 'friend_request',
-        message: `${userDoc?.displayName || userDoc?.username} sent you a friend request`,
-        read: false,
-        createdAt: new Date()
-      });
+      // Add local notification
+      addNotification(
+        targetUid,
+        'friend_request',
+        `${userDoc?.displayName || userDoc?.username} sent you a friend request`
+      );
       
       alert(`Friend request sent to ${targetUsername}!`);
       setInviteUsername('');
     } catch (error) {
-      alert('Error sending friend request');
+      console.error('Error sending friend request:', error);
+      alert('Error sending friend request. Please try again.');
     }
     setLoading(false);
   };
@@ -121,18 +121,27 @@ const FriendsModal = ({ isOpen, onClose, user, userDoc, onViewProfile }) => {
       });
       
       // Remove the friend request
-      const userDoc = await getDoc(userRef);
-      const requests = userDoc.data().friendRequests || {};
+      const userDocSnap = await getDoc(userRef);
+      const requests = userDocSnap.data().friendRequests || {};
       delete requests[friendUid];
       
       await updateDoc(userRef, {
         friendRequests: requests
       });
       
+      // Add local notification
+      addNotification(
+        friendUid,
+        'friend_accept',
+        `${userDoc?.displayName || userDoc?.username} accepted your friend request`
+      );
+      
       loadFriendRequests();
       loadFriends();
     } catch (error) {
-      alert('Error accepting friend request');
+      console.error('Error accepting friend request:', error);
+      // Fallback: just remove from local display
+      setFriendRequests(prev => prev.filter(req => req.uid !== friendUid));
     }
     setLoading(false);
   };
@@ -146,7 +155,9 @@ const FriendsModal = ({ isOpen, onClose, user, userDoc, onViewProfile }) => {
       });
       loadFriendRequests();
     } catch (error) {
-      alert('Error declining friend request');
+      console.error('Error declining friend request:', error);
+      // Fallback: just remove from local display
+      setFriendRequests(prev => prev.filter(req => req.uid !== friendUid));
     }
     setLoading(false);
   };

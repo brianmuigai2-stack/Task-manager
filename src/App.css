@@ -458,9 +458,44 @@ kbd {
     font-size: 12px;
     margin-left: 5px;
 }
-.accept-btn { background-color: #28a745; color: white; }
-.decline-btn, .remove-friend-btn { background-color: #dc3545; color: white; }
-.request-buttons { display: flex; gap: 5px; }
+.accept-btn { 
+    background-color: #28a745; 
+    color: white; 
+    border: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.3s;
+}
+.accept-btn:hover {
+    background-color: #218838;
+}
+.accept-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+}
+.decline-btn, .remove-friend-btn { 
+    background-color: #dc3545; 
+    color: white; 
+    border: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.3s;
+}
+.decline-btn:hover, .remove-friend-btn:hover {
+    background-color: #c82333;
+}
+.decline-btn:disabled, .remove-friend-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+}
+.request-buttons { 
+    display: flex; 
+    gap: 8px; 
+}
 
 /* --- POMODORO TIMER STYLES --- */
 .pomodoro-modal {
