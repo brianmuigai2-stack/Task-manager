@@ -370,10 +370,10 @@ function App() {
               <button
                 className="btn btn-secondary"
                 onClick={handleInstall}
-                title="Install App"
+                title="Download App"
                 style={{ display: deferredPrompt ? 'inline-block' : 'none' }}
               >
-                <i className="fas fa-download"></i> Install
+                <i className="fas fa-download"></i> Download
               </button>
               <button className="btn btn-danger" onClick={handleSignOut} title="Sign out">
                 <i className="fas fa-sign-out-alt"></i>

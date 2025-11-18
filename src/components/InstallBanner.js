@@ -61,8 +61,8 @@ const InstallBanner = ({ deferredPrompt, onInstall, onShowInstructions }) => {
             </>
           ) : (
             <>
-              <strong>Install Task Manager</strong>
-              <span>Tap menu (⋮) → "Install app" or "Add to Home Screen"</span>
+              <strong>Download Task Manager App</strong>
+              <span>Get the app for offline access and better experience</span>
             </>
           )}
         </div>
@@ -82,8 +82,8 @@ const InstallBanner = ({ deferredPrompt, onInstall, onShowInstructions }) => {
             </>
           ) : (
             <>
-              <button className="banner-btn secondary" onClick={onShowInstructions}>
-                How to Install
+              <button className="banner-btn primary" onClick={onShowInstructions}>
+                Download App
               </button>
               <button className="banner-btn secondary" onClick={handleDismiss}>
                 <i className="fas fa-times"></i>
