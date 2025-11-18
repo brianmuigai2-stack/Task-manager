@@ -1,0 +1,63 @@
+.install-instructions-modal {
+  max-width: 500px;
+  text-align: left;
+}
+
+.install-instructions-modal h2 {
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.install-steps {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.install-steps h3 {
+  margin-top: 0;
+  color: #4a90e2;
+  font-size: 18px;
+}
+
+.install-steps ol {
+  margin: 15px 0 0 0;
+  padding-left: 20px;
+}
+
+.install-steps li {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.install-steps i {
+  color: #666;
+  margin: 0 5px;
+}
+
+.install-note {
+  background: #e3f2fd;
+  padding: 15px;
+  border-radius: 6px;
+  border-left: 4px solid #4a90e2;
+  margin-bottom: 20px;
+}
+
+.install-note p {
+  margin: 0;
+  font-size: 14px;
+  color: #333;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .install-instructions-modal {
+    margin: 10px;
+    max-width: none;
+  }
+
+  .install-steps {
+    padding: 15px;
+  }
+}

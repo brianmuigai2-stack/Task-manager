@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './InstallBanner.css';
 
-const InstallBanner = ({ deferredPrompt, onInstall }) => {
+const InstallBanner = ({ deferredPrompt, onInstall, onShowInstructions }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
@@ -61,8 +61,8 @@ const InstallBanner = ({ deferredPrompt, onInstall }) => {
             </>
           ) : (
             <>
-              <strong>Add to Home Screen</strong>
-              <span>Use your browser's "Add to Home Screen" option</span>
+              <strong>Install Task Manager</strong>
+              <span>Tap menu (⋮) → "Install app" or "Add to Home Screen"</span>
             </>
           )}
         </div>
@@ -81,9 +81,14 @@ const InstallBanner = ({ deferredPrompt, onInstall }) => {
               </button>
             </>
           ) : (
-            <button className="banner-btn secondary" onClick={handleDismiss}>
-              <i className="fas fa-times"></i>
-            </button>
+            <>
+              <button className="banner-btn secondary" onClick={onShowInstructions}>
+                How to Install
+              </button>
+              <button className="banner-btn secondary" onClick={handleDismiss}>
+                <i className="fas fa-times"></i>
+              </button>
+            </>
           )}
         </div>
       </div>

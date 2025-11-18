@@ -21,6 +21,7 @@ import UserProfileModal from './components/UserProfileModal';
 import MessagesModal from './components/MessagesModal';
 import Loading from './components/Loading';
 import InstallBanner from './components/InstallBanner';
+import InstallModal from './components/InstallModal';
 import './App.css';
 
 function App() {
@@ -45,6 +46,7 @@ function App() {
   const [showMessages, setShowMessages] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -189,6 +191,12 @@ function App() {
       <InstallBanner
         deferredPrompt={deferredPrompt}
         onInstall={handleInstall}
+        onShowInstructions={() => setShowInstallModal(true)}
+      />
+
+      <InstallModal
+        isOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
       />
 
       <AuthModal
