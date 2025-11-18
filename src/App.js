@@ -48,6 +48,27 @@ function App() {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
 
+  const handleShare = async () => {
+    const shareData = {
+      title: 'Task Manager App',
+      text: 'Check out this awesome task management app!',
+      url: window.location.href
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log('Share cancelled');
+      }
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        alert('App link copied to clipboard!');
+      });
+    }
+  };
+
   useEffect(() => {
     if (user) {
       const q = query(
@@ -353,12 +374,19 @@ function App() {
               >
                 <i className="fas fa-users"></i>
               </button>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 onClick={() => setShowStatsModal(true)}
                 title="Stats"
               >
                 <i className="fas fa-chart-bar"></i>
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleShare}
+                title="Share App"
+              >
+                <i className="fas fa-share"></i>
               </button>
               <button 
                 className="btn btn-secondary" 

@@ -46,6 +46,24 @@ const InstallModal = ({ isOpen, onClose }) => {
 
         <div className="install-note">
           <p><strong>Note:</strong> This is a Progressive Web App (PWA) that installs through your browser, not through app stores.</p>
+          <p><strong>To share:</strong> Copy this link and send it via any sharing app like Xender, WhatsApp, etc.</p>
+          <div className="share-link">
+            <input
+              type="text"
+              value={window.location.href}
+              readOnly
+              className="link-input"
+            />
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+                alert('Link copied!');
+              }}
+            >
+              Copy Link
+            </button>
+          </div>
         </div>
 
         <button className="btn btn-primary" onClick={onClose}>Got it!</button>
