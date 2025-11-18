@@ -363,9 +363,9 @@ function App() {
                 className="btn btn-secondary"
                 onClick={handleInstall}
                 title="Install App"
-                style={{ display: showInstallPrompt ? 'inline-block' : 'none' }}
+                style={{ display: deferredPrompt ? 'inline-block' : 'none' }}
               >
-                <i className="fas fa-download"></i>
+                <i className="fas fa-download"></i> Install
               </button>
               <button className="btn btn-danger" onClick={handleSignOut} title="Sign out">
                 <i className="fas fa-sign-out-alt"></i>

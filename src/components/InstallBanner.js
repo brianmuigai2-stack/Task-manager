@@ -16,8 +16,8 @@ const InstallBanner = ({ deferredPrompt, onInstall }) => {
 
     checkStandalone();
 
-    // Show banner if not standalone and deferredPrompt available
-    if (!isStandalone && deferredPrompt) {
+    // Show banner if not standalone (always show for web version)
+    if (!isStandalone) {
       setIsVisible(true);
     }
   }, [deferredPrompt]);
@@ -39,7 +39,8 @@ const InstallBanner = ({ deferredPrompt, onInstall }) => {
     return null;
   }
 
-  if (!isVisible && !isStandalone) return null;
+  // Show banner if visible (deferredPrompt available) or if not standalone (web version)
+  if (!isVisible && isStandalone) return null;
 
   return (
     <div className={`install-banner ${isStandalone ? 'standalone' : ''}`}>
@@ -53,10 +54,15 @@ const InstallBanner = ({ deferredPrompt, onInstall }) => {
               <strong>You're using Task Manager App!</strong>
               <span>Enjoy the full experience</span>
             </>
-          ) : (
+          ) : deferredPrompt ? (
             <>
               <strong>Install Task Manager</strong>
               <span>Get the app for offline access and better experience</span>
+            </>
+          ) : (
+            <>
+              <strong>Add to Home Screen</strong>
+              <span>Use your browser's "Add to Home Screen" option</span>
             </>
           )}
         </div>
@@ -65,7 +71,7 @@ const InstallBanner = ({ deferredPrompt, onInstall }) => {
             <button className="banner-btn secondary" onClick={() => setIsVisible(false)}>
               <i className="fas fa-times"></i>
             </button>
-          ) : (
+          ) : deferredPrompt ? (
             <>
               <button className="banner-btn primary" onClick={handleInstall}>
                 Install
@@ -74,6 +80,10 @@ const InstallBanner = ({ deferredPrompt, onInstall }) => {
                 <i className="fas fa-times"></i>
               </button>
             </>
+          ) : (
+            <button className="banner-btn secondary" onClick={handleDismiss}>
+              <i className="fas fa-times"></i>
+            </button>
           )}
         </div>
       </div>
