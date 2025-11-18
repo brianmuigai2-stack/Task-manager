@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 const WelcomeModal = ({ isOpen, onClose, onLoadDemo, userName }) => {
   const [step, setStep] = useState(1);
+  const [showVideo, setShowVideo] = useState(false);
 
   const features = [
     {
@@ -47,7 +48,7 @@ const WelcomeModal = ({ isOpen, onClose, onLoadDemo, userName }) => {
             <p>Hi <strong>{userName}</strong>! Ready to supercharge your productivity?</p>
             
             <div className="welcome-options">
-              <button 
+              <button
                 className="btn btn-primary welcome-btn"
                 onClick={() => {
                   onLoadDemo();
@@ -57,8 +58,8 @@ const WelcomeModal = ({ isOpen, onClose, onLoadDemo, userName }) => {
                 🚀 Load Demo Tasks
                 <small>See the app in action with sample tasks</small>
               </button>
-              
-              <button 
+
+              <button
                 className="btn btn-secondary welcome-btn"
                 onClick={() => setStep(2)}
               >
@@ -66,6 +67,38 @@ const WelcomeModal = ({ isOpen, onClose, onLoadDemo, userName }) => {
                 <small>Begin with a clean slate</small>
               </button>
             </div>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <h2>📹 Quick Tutorial</h2>
+            <p>Watch this short video to learn how to use the app effectively.</p>
+            <div className="tutorial-video">
+              <video
+                controls
+                width="100%"
+                height="auto"
+                poster="/videos/task-background.mp4" // placeholder poster
+              >
+                <source src="/videos/tutorial.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+            </div>
+            <p>If the video doesn't load, you can find tutorials in the help section later.</p>
+
+            <button
+              className="btn btn-primary"
+              onClick={() => setStep(3)}
+            >
+              Continue to Features
+            </button>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <h2>🌟 Amazing Features Await You!</h2>
           </>
         )}
 

@@ -1,0 +1,122 @@
+.install-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.banner-icon {
+  font-size: 24px;
+  margin-right: 12px;
+  opacity: 0.9;
+}
+
+.banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.banner-text strong {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.banner-text span {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.banner-btn {
+  background: none;
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.banner-btn.primary {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.banner-btn.primary:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.banner-btn.secondary {
+  opacity: 0.7;
+  padding: 8px;
+}
+
+.banner-btn.secondary:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.install-banner.standalone {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+}
+
+.install-banner.standalone .banner-text span {
+  font-style: italic;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .install-banner {
+    padding: 10px 12px;
+  }
+
+  .banner-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .banner-actions {
+    align-self: flex-end;
+  }
+
+  .banner-text {
+    flex: none;
+  }
+}

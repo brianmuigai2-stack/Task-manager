@@ -19,6 +19,8 @@ import SocialFeed from './components/SocialFeed';
 import NotificationSystem from './components/NotificationSystem';
 import UserProfileModal from './components/UserProfileModal';
 import MessagesModal from './components/MessagesModal';
+import Loading from './components/Loading';
+import InstallBanner from './components/InstallBanner';
 import './App.css';
 
 function App() {
@@ -41,6 +43,8 @@ function App() {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [showMessages, setShowMessages] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -86,6 +90,20 @@ function App() {
       setShowAuthModal(true);
     }
   }, [user, loading]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallPrompt(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
 
   const handleAddTask = async (taskData) => {
     if (!user) return;
@@ -147,17 +165,33 @@ function App() {
     }
   };
 
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        setShowInstallPrompt(false);
+      }
+    }
+  };
+
   const activeTasks = tasks.filter(task => !task.completed);
 
   if (loading) {
-    return <div>Loading...</div>;
+    return <Loading />;
   }
 
   return (
     <div className="App">
       <VideoBackground />
-      
-      <AuthModal 
+
+      <InstallBanner
+        deferredPrompt={deferredPrompt}
+        onInstall={handleInstall}
+      />
+
+      <AuthModal
         isOpen={showAuthModal} 
         onClose={() => setShowAuthModal(false)} 
       />
@@ -251,6 +285,20 @@ function App() {
         userDoc={userDoc}
       />
 
+      {/* PWA Install Prompt */}
+      {showInstallPrompt && (
+        <div className="modal" style={{ display: 'block' }}>
+          <div className="modal-content install-modal">
+            <h2>Install Task Manager</h2>
+            <p>Install our app for offline access and a better experience!</p>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={handleInstall}>Install</button>
+              <button className="btn btn-secondary" onClick={() => setShowInstallPrompt(false)}>Later</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {user && (
         <div className="container">
           <header>
@@ -310,6 +358,14 @@ function App() {
                 title="Themes"
               >
                 <i className="fas fa-palette"></i>
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleInstall}
+                title="Install App"
+                style={{ display: showInstallPrompt ? 'inline-block' : 'none' }}
+              >
+                <i className="fas fa-download"></i>
               </button>
               <button className="btn btn-danger" onClick={handleSignOut} title="Sign out">
                 <i className="fas fa-sign-out-alt"></i>
