@@ -22,10 +22,13 @@ const InstallBanner = ({ deferredPrompt, onInstall, onShowInstructions }) => {
     }
   }, [deferredPrompt]);
 
-  const handleInstall = () => {
+  const handleDownload = () => {
     if (deferredPrompt) {
       onInstall();
       setIsVisible(false);
+    } else {
+      // If no install prompt available, show instructions
+      onShowInstructions();
     }
   };
 
@@ -82,8 +85,11 @@ const InstallBanner = ({ deferredPrompt, onInstall, onShowInstructions }) => {
             </>
           ) : (
             <>
-              <button className="banner-btn primary" onClick={onShowInstructions}>
+              <button className="banner-btn primary" onClick={handleDownload}>
                 Download App
+              </button>
+              <button className="banner-btn secondary" onClick={onShowInstructions}>
+                How to Install
               </button>
               <button className="banner-btn secondary" onClick={handleDismiss}>
                 <i className="fas fa-times"></i>
