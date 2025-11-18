@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, getUserDoc } from '../services/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { auth, db, getUserDoc } from '../services/firebase';
 
 export const useAuth = () => {
   const [user, setUser] = useState(null);
@@ -8,19 +9,31 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        const doc = await getUserDoc(firebaseUser.uid);
-        setUserDoc(doc);
+
+        // Listen for real-time updates to user document
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        const unsubscribeUserDoc = onSnapshot(userDocRef, (doc) => {
+          if (doc.exists()) {
+            setUserDoc(doc.data());
+          } else {
+            setUserDoc(null);
+          }
+          setLoading(false);
+        });
+
+        // Return cleanup function for user doc listener
+        return unsubscribeUserDoc;
       } else {
         setUser(null);
         setUserDoc(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return unsubscribe;
+    return unsubscribeAuth;
   }, []);
 
   return { user, userDoc, loading };

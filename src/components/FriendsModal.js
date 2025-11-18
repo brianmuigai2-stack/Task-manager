@@ -16,7 +16,15 @@ const FriendsModal = ({ isOpen, onClose, user, userDoc, onViewProfile }) => {
       loadFriends();
       loadSuggestions();
     }
-  }, [isOpen, user, userDoc]);
+  }, [isOpen, user]);
+
+  // Reload when userDoc changes (for real-time updates)
+  useEffect(() => {
+    if (isOpen && user && userDoc) {
+      loadFriendRequests();
+      loadFriends();
+    }
+  }, [userDoc]);
 
   const loadFriendRequests = async () => {
     if (!userDoc?.friendRequests) return;
@@ -110,38 +118,32 @@ const FriendsModal = ({ isOpen, onClose, user, userDoc, onViewProfile }) => {
     try {
       const userRef = doc(db, 'users', user.uid);
       const friendRef = doc(db, 'users', friendUid);
-      
-      // Add to friends list and remove from requests
+
+      // Add to friends list
       await updateDoc(userRef, {
         friends: arrayUnion(friendUid)
       });
-      
+
       await updateDoc(friendRef, {
         friends: arrayUnion(user.uid)
       });
-      
-      // Remove the friend request
-      const userDocSnap = await getDoc(userRef);
-      const requests = userDocSnap.data().friendRequests || {};
-      delete requests[friendUid];
-      
+
+      // Remove the friend request by setting it to null (Firebase will remove the field)
       await updateDoc(userRef, {
-        friendRequests: requests
+        [`friendRequests.${friendUid}`]: null
       });
-      
+
       // Add local notification
       addNotification(
         friendUid,
         'friend_accept',
         `${userDoc?.displayName || userDoc?.username} accepted your friend request`
       );
-      
-      loadFriendRequests();
-      loadFriends();
+
+      // The UI will update automatically due to real-time listener
     } catch (error) {
       console.error('Error accepting friend request:', error);
-      // Fallback: just remove from local display
-      setFriendRequests(prev => prev.filter(req => req.uid !== friendUid));
+      alert('Error accepting friend request. Please try again.');
     }
     setLoading(false);
   };
@@ -150,14 +152,14 @@ const FriendsModal = ({ isOpen, onClose, user, userDoc, onViewProfile }) => {
     setLoading(true);
     try {
       const userRef = doc(db, 'users', user.uid);
+      // Remove the friend request by setting it to null
       await updateDoc(userRef, {
-        [`friendRequests.${friendUid}`]: 'declined'
+        [`friendRequests.${friendUid}`]: null
       });
-      loadFriendRequests();
+      // The UI will update automatically due to real-time listener
     } catch (error) {
       console.error('Error declining friend request:', error);
-      // Fallback: just remove from local display
-      setFriendRequests(prev => prev.filter(req => req.uid !== friendUid));
+      alert('Error declining friend request. Please try again.');
     }
     setLoading(false);
   };
